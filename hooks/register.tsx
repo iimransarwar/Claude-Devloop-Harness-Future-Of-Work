@@ -48,7 +48,7 @@ import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewe
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
-import { ACTIONS, commandName, registerActions } from './actions'
+import { ACTIONS, commandName, failureText, registerActions } from './actions'
 import { SET_UP_HEADLINE } from './setup'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
@@ -906,11 +906,12 @@ export const register: Register = on => {
     }
 
     return answer
-  })
+  }).catch(($, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
 
   // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
   for (const a of ACTIONS) {
     on('command.run', { command: commandName(a) }, ($, e) => command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId))
+      .catch(($, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
   }
 
   // The rules, said once per thread; the guards below are what holds them.

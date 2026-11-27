@@ -44,6 +44,13 @@ export const ACTIONS: readonly Action[] = [
   { name: 'verify', description: 'Run the fast and full verify checks now' },
 ]
 
+/** What a person reads when a /devloop command throws or overruns: the real error, not the engine's generic line. */
+export function failureText(args: string, error: { kind: 'throw' | 'timeout'; message?: string } | undefined): string {
+  const reason = error?.kind === 'timeout' ? 'took too long' : (error?.message ?? 'unknown error')
+
+  return `devloop: ${`/devloop ${args}`.trim()} failed: ${reason}. If it keeps happening, start Claude with --debug and share the log.`
+}
+
 export const commandName = (a: Action): string => `devloop-${a.name}`
 
 /**

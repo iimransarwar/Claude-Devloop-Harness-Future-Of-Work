@@ -44,6 +44,8 @@ export type World = {
   /** The plugin's own git scripts, by tag. */
   scripts: string[]
   tools: string[]
+  /** Event name to error message: that call fails with it (only `fs.exists` today). */
+  failing: Record<string, string>
   /** Makes `$.clock.now` throw, so a step that needs the time fails. */
   isClockBroken: boolean
   /** Makes the session's root and directory unreadable, so a guard cannot even find the repository. */
@@ -148,7 +150,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     links: {},
     tree: 't0', branch: 'feature', base: 'b0', changed: [], since: [], basePolicy: 'same', pushRange: null, tracked: [], defaultBranch: 'main', lists: {},
     added: '', testHashes: {}, baseFiles: {},
-    exits: {}, outputs: {}, ran: [], scripts: [], tools: [], isClockBroken: false, isSessionBroken: false, now: 1000,
+    exits: {}, outputs: {}, ran: [], scripts: [], tools: [], failing: {}, isClockBroken: false, isSessionBroken: false, now: 1000,
     sessionId: 's1', root: '/repo', cwd: '/repo', cost: undefined,
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
     toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
@@ -227,7 +229,15 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
 
     return { value: undefined }
   })
-  on('fs.exists', (_, e) => ({ value: e.path in w.files || Object.keys(w.files).some(file => file.startsWith(`${e.path}/`)) }))
+  on('fs.exists', (_, e) => {
+    const failure = w.failing['fs.exists']
+    if (failure !== undefined) {
+      // Denied with the message, which is how the plugin's `await` sees the reason.
+      return { deny: failure }
+    }
+
+    return { value: e.path in w.files || Object.keys(w.files).some(file => file.startsWith(`${e.path}/`)) }
+  })
   on('fs.read', (_, e) => {
     if (w.unreadable.includes(e.path)) {
       throw new Error(`read ${e.path} failed: EIO`)

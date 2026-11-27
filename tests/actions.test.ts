@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ACTIONS } from '../hooks/actions'
+import { ACTIONS, failureText } from '../hooks/actions'
 import { HELP } from '../hooks/commands'
 
 import { devloop, start, world } from './world'
@@ -36,4 +36,13 @@ test('a person-only action through its entry is refused for the agent as /devloo
   world(on); await start($)
   const run = (command: string, args: string) => $.command.run({ command, args, origin: { kind: 'sdk' }, presentation: { isFullscreen: false, columns: 80 } })
   expect((await run('devloop-approve', '')).text).toBe((await run('devloop', 'approve')).text)
+})
+test('failureText names the command and the error, or took too long', () => {
+  expect(failureText('verify', { kind: 'throw', message: 'boom' })).toBe('devloop: /devloop verify failed: boom. If it keeps happening, start Claude with --debug and share the log.')
+  expect(failureText('verify', { kind: 'timeout' })).toMatch(/failed: took too long\./)
+  expect(failureText('', { kind: 'throw', message: 'boom' })).toMatch(/^devloop: \/devloop failed: boom/)
+})
+test('a throwing /devloop shows the real error, not the engine line', async ($, on) => {
+  const w = world(on, null); w.failing['fs.exists'] = 'disk unavailable'; await start($)
+  expect(await devloop($, 'init')).toMatch(/^devloop: \/devloop init failed: .*disk unavailable/)
 })
