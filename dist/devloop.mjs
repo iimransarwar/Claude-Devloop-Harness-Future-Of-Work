@@ -5032,7 +5032,7 @@ function pushSends(committable, sent, seen = { hidden: [], differs: [], differCo
 }
 
 // hooks/records.ts
-var HARNESS_VERSION = "0.6.0";
+var HARNESS_VERSION = "0.6.1";
 var str = (maxLength = 300) => ({ type: "string", maxLength });
 var text = (maxLength = 300) => ({ type: "string", maxLength });
 var nullableText = (maxLength = 300) => ({ type: ["string", "null"], maxLength });

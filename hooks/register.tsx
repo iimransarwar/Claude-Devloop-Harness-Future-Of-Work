@@ -2304,20 +2304,22 @@ export const register: Register = on => {
     if (parts === null) {
       return next(e)
     }
-    const { Box, Progress, Text } = $.ui.resolve(e)
+    const { Text } = $.ui.resolve(e)
+    // One line of inline runs (never a flex row, which stretched and cut the parts), with a short text bar for the gate.
+    const total = Math.max(1, parts.gate.total)
+    const filled = Math.round((parts.gate.met / total) * 6)
+    const bar = `${'▰'.repeat(filled)}${'▱'.repeat(6 - filled)}`
+    const dot = <Text color="subtle"> · </Text>
 
     return (
-      <Box>
+      <Text wrap="truncate-end">
         <Text bold color="suggestion">devloop</Text>
-        <Text>  {parts.phase}  ·  tests </Text>
-        <Text color={parts.tests.color}>{parts.tests.text}</Text>
-        {parts.review !== null && <Text>  ·  review </Text>}
-        {parts.review !== null && <Text color={parts.review.color}>{parts.review.text}</Text>}
-        <Text>  ·  </Text>
-        <Progress label="gate" value={parts.gate.met} max={Math.max(1, parts.gate.total)} valueText={`${parts.gate.met}/${parts.gate.total}`} />
-        <Text>  ·  </Text>
-        <Text color={parts.risk.color}>{parts.risk.text}{parts.risk.text === 'no changes' ? '' : ' risk'}</Text>
-      </Box>
+        {dot}<Text>{parts.phase}</Text>
+        {dot}<Text color="subtle">tests </Text><Text color={parts.tests.color}>{parts.tests.text}</Text>
+        {parts.review !== null && dot}{parts.review !== null && <Text color="subtle">review </Text>}{parts.review !== null && <Text color={parts.review.color}>{parts.review.text}</Text>}
+        {dot}<Text color="subtle">gate </Text><Text color={parts.gate.met === parts.gate.total ? 'success' : 'warning'}>{bar} {parts.gate.met}/{parts.gate.total}</Text>
+        {dot}<Text color={parts.risk.color}>{parts.risk.text}{parts.risk.text === 'no changes' ? '' : ' risk'}</Text>
+      </Text>
     )
   })
 

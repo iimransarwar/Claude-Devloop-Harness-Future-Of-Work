@@ -6,7 +6,7 @@
 // but types, so the smoke test can load this file on its own.
 
 /** The harness's own version, carried in every record it writes (plugin.json says the same; smoke.sh checks). */
-export const HARNESS_VERSION = '0.6.0'
+export const HARNESS_VERSION = '0.6.1'
 
 /** The subset of JSON Schema (2020-12) these records use, and the validator below reads. */
 export type Schema = {

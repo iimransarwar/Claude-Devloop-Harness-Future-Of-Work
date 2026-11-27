@@ -124,7 +124,7 @@ describe('the save at /devloop done (decisions 2, 3)', () => {
         { id: 'rejects-bad-password', description: 'a wrong password is refused', check: 'npm test -- bad-password' },
         { id: 'accepts-good-password', description: 'a right password signs in', check: 'npm test -- good-password' },
       ],
-      approvedAt: DAY, closedAt: DAY, outcome: { status: 'closed', isAllPassing: true, reviewRounds: 0, defects: 0 }, harness: '0.6.0',
+      approvedAt: DAY, closedAt: DAY, outcome: { status: 'closed', isAllPassing: true, reviewRounds: 0, defects: 0 }, harness: '0.6.1',
     })
     // Nothing else is copied: the folder holds the three files.
     expect(Object.keys(w.files).filter(path => path.startsWith(`${LIB}/${id}/`)).sort()).toEqual([`${LIB}/${id}/SPEC.md`, `${LIB}/${id}/entry.json`, `${LIB}/${id}/features.json`])
