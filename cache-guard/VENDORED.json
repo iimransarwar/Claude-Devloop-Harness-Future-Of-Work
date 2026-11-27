@@ -1,13 +1,13 @@
 {
   "name": "cache-guard",
   "source": "https://github.com/iimransarwar/cache-guard-for-claude",
-  "commit": "5a37bf0c1ff61f5a26eb8e6807901eadc06d1244",
-  "version": "2.6.0",
+  "commit": "9256974ddec1ad8c79a6b28fe37001b3a73e190e",
+  "version": "2.6.1",
   "license": "Apache-2.0",
-  "vendored": "2026-11-26",
+  "vendored": "2026-11-27",
   "files": {
     "README.md": "567f90c3ccd788207b36c48f4734fff1d8792f3a8d6f582d4de43acdc01955b7",
-    "cache_guard.py": "12b6394c5aba0a4b07b14389849514ac0baa3ec3319248abda17736ce3fac863",
+    "cache_guard.py": "873524f239cd1a742f23be976d9c9c48209f15713e649226387edbbf59f41d14",
     "docs/superpowers/plans/2026-11-24-all-projects-line.md": "933738f1a5f2b8ca9d35d9fe815f499d4983a1f00c745ecf1cfa80eaf5d699fc",
     "docs/superpowers/specs/2026-11-24-all-projects-line-design.md": "9e90bfe6b81779890b4b022beca0c8f24b476f4362480dc63efc21f21bc80dbe",
     "docs/superpowers/specs/2026-11-24-keepwarm-design.md": "0ca1932958d2d479b786cd3e47902fe6defce6d6ee50156c0220131d2906fe31",

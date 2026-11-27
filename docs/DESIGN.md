@@ -2376,7 +2376,7 @@ parts are `hooks/cacheguard.ts`; `hooks/cachecmd.ts` does the work.
 
 - **Vendored unchanged.** `cache-guard/` holds `cache_guard.py` (executable),
   `lean.md`, its `README.md`, `tests/` and `docs/`, byte for byte from commit
-  `5a37bf0` (v2.6.0). `cache-guard/VENDORED.json` records the source, the
+  `9256974` (v2.6.1). `cache-guard/VENDORED.json` records the source, the
   commit, the version, the licence and a SHA-256 per copied file under
   `files`; the two files this repository adds, `LICENSE` and `NOTICE.md`,
   are listed apart under `added`. `bash scripts/vendor-cache-guard.sh
