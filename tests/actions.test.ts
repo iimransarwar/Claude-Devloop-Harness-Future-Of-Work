@@ -59,10 +59,11 @@ test('a person typing /devloop in a set-up repo opens the panel', async ($, on) 
   await devloop($, '')
   expect(w.opened).toContain('devloop')
 })
-test('a person typing a menu entry opens the panel too', async ($, on) => {
+test('a menu entry or another action answers in the chat and leaves a closed panel closed', async ($, on) => {
   const w = world(on); await start($); w.opened.length = 0
   await $.command.run({ command: 'devloop-help', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
-  expect(w.opened).toContain('devloop')
+  await $.command.run({ command: 'devloop', args: 'audit 3', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect(w.opened).not.toContain('devloop')
 })
 test('the agent running /devloop does not open the panel', async ($, on) => {
   const w = world(on); await start($); w.opened.length = 0
@@ -84,4 +85,12 @@ test('a menu entry whose command throws shows the readable failure (doctor reach
   const w = world(on, null); w.failing['fs.exists'] = 'disk unavailable'; await start($)
   const r = await $.command.run({ command: 'devloop-doctor', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
   expect(r.text).toMatch(/^devloop: \/devloop doctor failed: disk unavailable\. If it keeps/)
+})
+
+test('the panel\'s Close button closes the Dev loop panel', async ($, on) => {
+  const w = world(on); await start($)
+  const ui = await $.ui.mount({ plugin: 'devloop', surface: 'terminal', component: 'Pane', requestId: 'devloop', props: { title: 'Dev loop', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {}, id: 'devloop', plugin: 'devloop' } } as never)
+  await ui.press({ key: 'close' })
+  await Promise.resolve(); await Promise.resolve()
+  expect(w.closed).toContain('devloop')
 })
