@@ -116,7 +116,7 @@ var DEFAULTS = {
   grounding: { mode: null, fresh: "turn", also: [], never: [] },
   loop: { failedRounds: 6 },
   testing: { scope: "targeted" },
-  learning: { auto: "off", repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
+  learning: { auto: "trial", repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3, at: "close" },
   library: { save: "auto" }
 };
 var BUILTIN_SECRETS = [
@@ -577,7 +577,7 @@ function learning(v, errors) {
     errors.push('learning: expected { "auto", "repeats", "promoteHits", "maxTrial", "maxRuns" }; using "off"');
     return { ...fallback, auto: "off" };
   }
-  errors.push(...unknownKeys(v, ["auto", "repeats", "promoteHits", "maxTrial", "maxRuns"], "learning."));
+  errors.push(...unknownKeys(v, ["auto", "repeats", "promoteHits", "maxTrial", "maxRuns", "at"], "learning."));
   let auto = fallback.auto;
   if (v.auto === "off" || v.auto === "propose" || v.auto === "trial") {
     auto = v.auto;
@@ -599,7 +599,11 @@ function learning(v, errors) {
   const maxTrial = whole(v, "maxTrial", fallback.maxTrial, 100, sub);
   const maxRuns = whole(v, "maxRuns", fallback.maxRuns, 100, sub);
   errors.push(...sub.map((error) => `learning.${error}`));
-  return { auto, repeats, promoteHits, maxTrial, maxRuns };
+  const at = v.at === "turn" || v.at === "close" ? v.at : fallback.at;
+  if (v.at !== undefined && v.at !== "turn" && v.at !== "close") {
+    errors.push('learning.at: expected "turn" or "close"; using "close"');
+  }
+  return { auto, repeats, promoteHits, maxTrial, maxRuns, at };
 }
 function library(v, errors) {
   if (v === undefined) {
@@ -5034,7 +5038,7 @@ function pushSends(committable, sent, seen = { hidden: [], differs: [], differCo
 }
 
 // hooks/records.ts
-var HARNESS_VERSION = "0.6.1";
+var HARNESS_VERSION = "0.7.0";
 var str = (maxLength = 300) => ({ type: "string", maxLength });
 var text = (maxLength = 300) => ({ type: "string", maxLength });
 var nullableText = (maxLength = 300) => ({ type: ["string", "null"], maxLength });

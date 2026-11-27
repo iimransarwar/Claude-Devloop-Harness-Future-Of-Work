@@ -133,7 +133,7 @@ export type Config = {
    * A trial rule at `promoteHits` hits is offered to a person; at most
    * `maxTrial` trial rules, `maxRuns` proposer runs per session.
    */
-  learning: { auto: 'off' | 'propose' | 'trial'; repeats: number; promoteHits: number; maxTrial: number; maxRuns: number }
+  learning: { auto: 'off' | 'propose' | 'trial'; repeats: number; promoteHits: number; maxTrial: number; maxRuns: number; at: 'turn' | 'close' }
   /**
    * The spec library (docs/design-notes/spec-library.md, DESIGN 4.18):
    * `auto` saves an approved spec to the person's library when its change
@@ -243,8 +243,8 @@ export const DEFAULTS: Config = {
   grounding: { mode: null, fresh: 'turn', also: [], never: [] },
   loop: { failedRounds: 6 },
   testing: { scope: 'targeted' },
-  // Learning runs only when a person asks (/devloop learn): a proposer at the end of turns costs time nobody asked for.
-  learning: { auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
+  // Learning runs by itself, but its proposer only once, when a change closes: never at the end of every turn.
+  learning: { auto: 'trial', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3, at: 'close' },
   library: { save: 'auto' },
 }
 
@@ -880,7 +880,7 @@ function learning(v: unknown, errors: string[]): Config['learning'] {
 
     return { ...fallback, auto: 'off' }
   }
-  errors.push(...unknownKeys(v, ['auto', 'repeats', 'promoteHits', 'maxTrial', 'maxRuns'], 'learning.'))
+  errors.push(...unknownKeys(v, ['auto', 'repeats', 'promoteHits', 'maxTrial', 'maxRuns', 'at'], 'learning.'))
   let auto = fallback.auto
   if (v.auto === 'off' || v.auto === 'propose' || v.auto === 'trial') {
     auto = v.auto
@@ -904,7 +904,12 @@ function learning(v: unknown, errors: string[]): Config['learning'] {
   const maxRuns = whole(v, 'maxRuns', fallback.maxRuns, 100, sub)
   errors.push(...sub.map(error => `learning.${error}`))
 
-  return { auto, repeats, promoteHits, maxTrial, maxRuns }
+  const at = v.at === 'turn' || v.at === 'close' ? v.at : fallback.at
+  if (v.at !== undefined && v.at !== 'turn' && v.at !== 'close') {
+    errors.push('learning.at: expected "turn" or "close"; using "close"')
+  }
+
+  return { auto, repeats, promoteHits, maxTrial, maxRuns, at }
 }
 
 /**

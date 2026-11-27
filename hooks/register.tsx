@@ -789,7 +789,8 @@ async function afterTurn($: Engine, isPerson: boolean): Promise<void> {
     return
   }
   await sweepLearning($, at, cfg).catch(() => undefined)
-  if (cfg.learning.auto !== 'off') {
+  // The proposer runs at a turn's end only when the policy asks for it (learning.at "turn"); by default it waits for the change to close.
+  if (cfg.learning.auto !== 'off' && cfg.learning.at === 'turn') {
     await maybePropose($, at, cfg, 'turn', isPerson)
   }
 }
