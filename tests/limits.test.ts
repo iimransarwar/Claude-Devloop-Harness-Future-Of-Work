@@ -309,7 +309,9 @@ describe('the rule the agent sees (decision 6)', () => {
     delete w.files['/repo/devloop.json']
     w.basePolicy = null
     w.files['/repo/go.mod'] = 'module x'
-    expect(await devloop($, 'init')).toMatch(/go test \.\/\.\.\. \(when \*\*\/\*\.go go\.mod go\.sum\)/)
+    await devloop($, 'init')
+    // The setup question that proposes the checks names each in full, its when globs too.
+    expect(w.questions.join('\n')).toMatch(/go test \.\/\.\.\. \(when \*\*\/\*\.go go\.mod go\.sum\)/)
     expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').verify).toEqual([{ run: 'go vet ./...', when: ['**/*.go', 'go.mod', 'go.sum'] }, { run: 'go test ./...', when: ['**/*.go', 'go.mod', 'go.sum'] }])
   })
 })

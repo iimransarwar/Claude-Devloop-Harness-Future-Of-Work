@@ -181,6 +181,8 @@ export type Loop = {
   evidence: Evidence
   /** The working tree's content hash as last read; null outside git. */
   tree: string | null
+  /** True when the last snapshot said the folder is not a git work tree (not merely that no snapshot could be read). */
+  isOutsideGit?: boolean
   /** Whether the snapshot could find the base branch; false shuts the gate. */
   isBaseKnown: boolean
   /** A file changed since verification last passed. */

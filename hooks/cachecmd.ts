@@ -81,6 +81,32 @@ async function runScript($: Engine, at: Place, args: readonly string[], timeoutM
 
 const USAGE = 'Usage: /devloop cache install [--trim --notify --keepwarm --handoff --lean --all, and the --no- forms] | uninstall | doctor | report [--all] [--days N] [session id] | status. cache-guard is optional and needs Python 3.8+; its README is cache-guard/README.md in the plugin.'
 
+/**
+ * Runs cache-guard's installer and writes the audit entry; no dialog (the
+ * caller has the person's yes). On failure `text` reads `exit N):\n<output>`.
+ */
+export async function installCacheGuard($: Engine, at: Place, flags: readonly string[], e: CommandRunInput): Promise<{ isOk: boolean; text: string }> {
+  const command = `python3 <plugin>/${SCRIPT} ${['install', ...flags].join(' ')}`.trim()
+  const ran = await runScript($, at, ['install', ...flags], 120_000)
+  const said = ran === null ? 'cache-guard could not be started.' : cleanOutput(ran.text, command)
+  if (ran !== null && ran.code === 0) {
+    await audit($, at.root, 'cache-guard-installed', actorOf(e), flags.join(' ') || '(no flags)', (await loopOf($)).tree, said.split('\n')[0]?.slice(0, 200) ?? '')
+
+    return { isOk: true, text: said }
+  }
+
+  return { isOk: false, text: `exit ${ran?.code ?? 'none'}):\n${said}` }
+}
+
+/** Whether cache-guard's status line is already in the person's settings, it cannot run here (no Python 3.8+), or it can be offered. */
+export async function cacheGuardState($: Engine): Promise<'installed' | 'no-python' | 'available'> {
+  if ((await guardNow($)).hasStatusLine) {
+    return 'installed'
+  }
+
+  return (await pythonOf($)).isOk ? 'available' : 'no-python'
+}
+
 /** `/devloop cache <install|uninstall|doctor|report|status>`. */
 export async function cacheCommand($: Engine, at: Place, words: readonly string[], e: CommandRunInput): Promise<CommandRunResult> {
   const [sub = '', ...rest] = words
@@ -120,10 +146,15 @@ export async function cacheCommand($: Engine, at: Place, words: readonly string[
     if (!(await confirm($, question, sub === 'install' ? 'Install it' : 'Uninstall it', 'Leave it'))) {
       return { text: 'Nothing was changed.' }
     }
+    if (sub === 'install') {
+      const done = await installCacheGuard($, at, args.slice(1), e)
+
+      return { text: done.isOk ? done.text : `cache-guard's install did not finish (${done.text}` }
+    }
     const ran = await runScript($, at, args, 120_000)
     const said = ran === null ? 'cache-guard could not be started.' : cleanOutput(ran.text, command)
     if (ran !== null && ran.code === 0) {
-      await audit($, at.root, sub === 'install' ? 'cache-guard-installed' : 'cache-guard-removed', actorOf(e), args.slice(1).join(' ') || '(no flags)', (await loopOf($)).tree, said.split('\n')[0]?.slice(0, 200) ?? '')
+      await audit($, at.root, 'cache-guard-removed', actorOf(e), args.slice(1).join(' ') || '(no flags)', (await loopOf($)).tree, said.split('\n')[0]?.slice(0, 200) ?? '')
     }
 
     return { text: ran !== null && ran.code === 0 ? said : `cache-guard's ${sub} did not finish (exit ${ran?.code ?? 'none'}):\n${said}` }

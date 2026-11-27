@@ -5,14 +5,14 @@
 // spec a person approves, a reviewer with a fresh context, risk tiers that
 // decide who may ship, and a ledger that turns repeated failures into rules.
 // A repository opts in with a devloop.json at its root; without one only the
-// secrets guard and /devloop init are live.
+// secrets guard and /devloop (which sets it up) are live.
 
 import type { Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage } from 'claude-code'
 
 import type { Loop, PaneTab } from '../types'
 import { cacheReport, hitRate, meterTurn } from './cache'
 import type { Miss } from './cache'
-import { briefFacts, command, keepGate, statusReport, writeHandoff } from './commands'
+import { briefFacts, command, keepGate, NOT_GIT_STATUS, statusReport, writeHandoff } from './commands'
 import { contentReason, countUnmarked, isFired, judgeContent, lowered, rulesFor } from './contentrules'
 import type { Baseline, RuleHit } from './contentrules'
 import { DEFAULTS } from './config'
@@ -35,7 +35,7 @@ import { foldInbox, heartbeat, stampCall, stampPrompt, stampStop } from './porta
 import { backstop, firstLine, groundingMode, isLook, isQuestionOfFact, NUDGE } from './grounding'
 import { checksForChange, isAtLimit, limitLines, NO_LIMIT } from './limits'
 import { countFailedRound, limitNow, notePassing, reachLimit } from './rounds'
-import { audit, auditOf, keepRecord, listOf, meterCost } from './journal'
+import { audit, auditOf, isFromPerson, keepRecord, listOf, meterCost } from './journal'
 import { hit, papercutGroups, papercutGroup, PAPERCUTS_PER_TURN } from './ledger'
 import type { Hits, Papercut, PapercutClose } from './ledger'
 import { syncRegressions } from './regress'
@@ -48,6 +48,8 @@ import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewe
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
+import { ACTIONS, commandName, failureText, registerActions } from './actions'
+import { SET_UP_HEADLINE } from './setup'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
   matchesAny, maybeWrittenByReading, namedPlacesByReading, NEVER_LIFTED, place, relative, shipLookups, shipsOf, strictest, whereOf, writtenPaths, writtenPathsByReading, writesOpenPath,
@@ -224,6 +226,20 @@ export const TOOL_SPECS = [
 
 /** A hash of the tool list as registered: part of devloop's own prefix, for the cache meter. */
 const TOOLS_HASH = digest(JSON.stringify(TOOL_SPECS))
+
+/**
+ * A pane opened while serving a person's command counts as asked, so the engine draws it at any width.
+ * Looked up fresh: the command may just have set the repository up. A failure here never fails the command.
+ */
+async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): Promise<void> {
+  if (!isFromPerson(e)) {
+    return
+  }
+  const at = await locate($).catch(() => null)
+  if (at !== null && at.isOptedIn) {
+    void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
+  }
+}
 
 /** Registers every tool, the same specs in every session (see TOOL_SPECS). */
 async function registerTools($: Engine): Promise<void> {
@@ -875,6 +891,7 @@ export const register: Register = on => {
     // The module is live in this session: a classic hook that finds no stamp for a call knows the module's hook was skipped (D1).
     await heartbeat($).catch(() => undefined)
     const at = await wake($).catch(() => null)
+    await registerActions($, at?.isOptedIn === true).catch(() => undefined)
     if (at !== null && at.isOptedIn) {
       if (e.isInteractive) {
         void $.ui.open({ id: PANE, title: 'Dev loop' })
@@ -896,13 +913,25 @@ export const register: Register = on => {
   on('command.run', { command: 'devloop' }, async ($, e) => {
     // An exemption granted while a turn runs belongs to that turn.
     const answer = await command($, e, turnId)
-    // The tools are already registered, the same as in any session: init changes no tool.
-    if (/^\s*init\b/.test(e.args) && /^Wrote /.test(answer.text ?? '')) {
-      void $.ui.open({ id: PANE, title: 'Dev loop' })
+    // The tools are already registered, the same as in any session: setup changes no tool.
+    if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
+      await registerActions($, true).catch(() => undefined)
     }
+    await openForPerson($, e)
 
     return answer
-  })
+  }).catch((_, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
+
+  // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
+  for (const a of ACTIONS) {
+    on('command.run', { command: commandName(a) }, async ($, e) => {
+      const answer = await command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId)
+      await openForPerson($, e)
+
+      return answer
+    })
+      .catch((_, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
+  }
 
   // The rules, said once per thread; the guards below are what holds them.
   // One text for every repository and every state (RULES), sent where the
@@ -1610,7 +1639,7 @@ export const register: Register = on => {
     const cfg = (await policyInForce($, at))?.cfg ?? null
     const loop = await loopOf($)
     if (cfg === null) {
-      return { result: 'This repository has not opted in to devloop (no devloop.json), so there are no features to check. A person can run /devloop init.' }
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there are no features to check. A person can set it up by typing /devloop.' }
     }
     if (loop.spec === null || loop.phase !== 'build') {
       return { result: 'No approved spec is active, so there is no feature to check. A person starts one with /devloop spec <name> and approves it with /devloop approve.' }
@@ -1664,7 +1693,7 @@ export const register: Register = on => {
     const at = await locate($)
     const inForce = await policyInForce($, at)
     if (inForce === null) {
-      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is no gate. A person can run /devloop init.' }
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is no gate. A person can set it up by typing /devloop.' }
     }
     // The evidence is proven here too, and nothing is written.
     const { loop, snap } = await refresh($, at, inForce.cfg, false)
@@ -1967,7 +1996,7 @@ export const register: Register = on => {
     const at = await locate($)
     const cfg = (await policyInForce($, at))?.cfg ?? null
     if (cfg === null) {
-      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is nowhere to keep a handoff. A person can run /devloop init.' }
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is nowhere to keep a handoff. A person can set it up by typing /devloop.' }
     }
     const { input, problems } = readHandoff(e as unknown as Record<string, unknown>)
     if (input.objective === '' || input.nextStep === '') {
@@ -2056,7 +2085,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>This repository is not set up for the loop.</Text>
-          <Text dimColor>Run /devloop init to start.</Text>
+          <Text dimColor>Type /devloop to set it up.</Text>
         </Box>
       )
     }
@@ -2121,7 +2150,7 @@ export const register: Register = on => {
     } else {
       body = [
         tier !== 'none' && <Text bold>{isShippable(loop, cfg, facts) ? 'Gate: green' : 'Gate: not green'}</Text>,
-        tier === 'none' && <Text dimColor>No changes yet: nothing to gate.</Text>,
+        tier === 'none' && <Text dimColor>{loop.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
         ...(tier === 'none' ? [] : checks.map(check => (
           <Text color={check.isMet ? undefined : 'warning'} wrap="truncate-end">
             {check.isMet ? '[x]' : '[ ]'} {check.label}: {check.note}

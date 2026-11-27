@@ -278,6 +278,8 @@ export type Snapshot = {
   differs: { path: string; isUntracked: boolean }[]
   /** How many files differ between the committable tree and HEAD's. */
   differCount: number
+  /** Set when git answered that the folder is no work tree (the script exits 0 with nothing); never when a snapshot merely failed or was unreadable. */
+  isOutsideGit?: boolean
 }
 
 export const NO_SNAPSHOT: Snapshot = { tree: null, committable: null, headTree: null, branch: null, head: null, base: null, files: [], size: { files: 0, lines: 0 }, ignored: {}, capped: null, hidden: [], differs: [], differCount: 0 }
@@ -294,6 +296,9 @@ export const HIDDEN_PAST_CAP = 'more files with the skip-worktree or assume-unch
  */
 export function readSnapshot(stdout: string): Snapshot {
   const lines = stdout.split('\n').filter(line => line !== '')
+  if (stdout.trim() === '') {
+    return { ...NO_SNAPSHOT, isOutsideGit: true }
+  }
   if (lines.some(line => !TAGGED.test(line))) {
     return NO_SNAPSHOT
   }

@@ -476,7 +476,8 @@ export async function snapshot($: Engine, at: Place, cfg: Config): Promise<Snaps
       cwd: at.root,
       timeoutMs: 60_000,
     })
-    const snap = readSnapshot(ran.stdout)
+    // Empty output means outside git only when the script itself ran to its exit 0.
+    const snap = ran.exitCode === 0 ? readSnapshot(ran.stdout) : NO_SNAPSHOT
     if (snap.tree !== null) {
       bases.set(baseKey(at.root, cfg.defaultBranch, base), snap.base)
       cappedAt.set(at.root, snap.capped)
@@ -824,7 +825,7 @@ export async function clearKept($: Engine, at: Place): Promise<void> {
 /** Folds a snapshot into the loop: git's list of changed files is the truth where there is one. */
 export function withSnapshot(loop: Loop, snap: Snapshot, cfg: Config): Loop {
   if (snap.tree === null) {
-    return loop
+    return snap.isOutsideGit === true ? { ...loop, isOutsideGit: true } : loop
   }
   // Instruction files git ignores count as changed when their content differs from the change's start.
   const ignoredBase = loop.ignoredBase ?? snap.ignored
@@ -834,6 +835,7 @@ export function withSnapshot(loop: Loop, snap: Snapshot, cfg: Config): Loop {
 
   return {
     ...loop,
+    ...(loop.isOutsideGit === true ? { isOutsideGit: false } : {}),
     ignoredBase,
     tree: snap.tree,
     isBaseKnown: snap.base !== null,

@@ -2,6 +2,8 @@ import { expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { PYTHON_VERSION, SCRIPT } from '../hooks/cacheguard'
+
 // Nothing sits beneath the plugin in a test, so this stands in for the
 // engine and the machine: a repository held in memory, and a shell whose
 // answers the test decides. The harness's own git scripts carry a
@@ -44,6 +46,10 @@ export type World = {
   /** The plugin's own git scripts, by tag. */
   scripts: string[]
   tools: string[]
+  /** The id of each `ui.open`, in order. */
+  opened: string[]
+  /** Event name to error message: that call fails with it (only `fs.exists` today). */
+  failing: Record<string, string>
   /** Makes `$.clock.now` throw, so a step that needs the time fails. */
   isClockBroken: boolean
   /** Makes the session's root and directory unreadable, so a guard cannot even find the repository. */
@@ -65,6 +71,10 @@ export type World = {
   onAsk: (() => void) | null
   /** Each tool spec registered, whole, in order (C1: the list must never change). */
   toolSpecs: unknown[]
+  /** Each command name registered, in order. */
+  registered: string[]
+  /** Command names another plugin holds: registering one throws. */
+  takenCommands: string[]
   /** The context each prompt carried down to the engine, in order. */
   contexts: (readonly string[])[]
   /** The live context window as `$.session.usage()` reports it: tokens in use (undefined before a response) and the window. */
@@ -116,6 +126,29 @@ export type World = {
    * round, P-C: the wildcard expander lists folders). Off by default.
    */
   isDiskListed: boolean
+  /**
+   * What the person answers to each setup question (`header: 'Setup'`), used up in
+   * order; null, or once used up, answers each with its first option (Enter). The
+   * item `'<dismiss>'` dismisses that question.
+   */
+  setupAnswers: string[] | null
+  /** The session's Python version; null answers nothing, so setup skips its cache-guard question. */
+  pythonVersion: string | null
+  /** Each cache-guard installer run's argv after the script path, and its exit code. */
+  cacheInstalls: string[][]
+  cacheInstallExit: number
+  /** What the plugin logged to the person (`$.ui.log`). */
+  logs: string[]
+  /** Whether the session's folder is a git work tree: false, the snapshot answers nothing and the git probe lists `gitSubfolders`. */
+  isGit: boolean
+  /** The snapshot script fails (exit 1, nothing printed) in a git repository: a null tree that is not "outside git". */
+  isSnapshotBroken: boolean
+  /** Direct subfolders holding a `.git`, as the git probe lists them outside a work tree. */
+  gitSubfolders: string[]
+  /** A path whose write fails (`disk full`); null for none. */
+  failWrite: string | null
+  /** ui.open throws. */
+  failOpen: boolean
 }
 
 export const CONFIG = { verify: ['npm test'], mode: 'enforce' }
@@ -130,11 +163,12 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     links: {},
     tree: 't0', branch: 'feature', base: 'b0', changed: [], since: [], basePolicy: 'same', pushRange: null, tracked: [], defaultBranch: 'main', lists: {},
     added: '', testHashes: {}, baseFiles: {},
-    exits: {}, outputs: {}, ran: [], scripts: [], tools: [], isClockBroken: false, isSessionBroken: false, now: 1000,
+    exits: {}, outputs: {}, ran: [], scripts: [], tools: [], opened: [], failing: {}, isClockBroken: false, isSessionBroken: false, now: 1000,
     sessionId: 's1', root: '/repo', cwd: '/repo', cost: undefined,
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
-    toolSpecs: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
+    toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
     scriptArgs: {}, ignored: {}, capped: null, hold: null, onHeld: null, unreadable: [], toolErrors: [], hookEnv: {}, diffs: {}, committable: null, headTree: null, hidden: [], differs: [], argvs: [], isDiskListed: false,
+    setupAnswers: null, pythonVersion: null, cacheInstalls: [], cacheInstallExit: 0, logs: [], isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null, failOpen: false,
   }
   on('store.get', (_, e) => ({ value: w.store[e.key] }))
   on('store.set', (_, e) => {
@@ -186,21 +220,48 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
   })
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
   on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/data/devloop', ...w.hookEnv } }))
-  on('command.register', () => ({ value: { command: 'devloop' } }))
+  on('command.register', (_, e) => {
+    if (w.takenCommands.includes(e.name)) {
+      throw new Error('taken')
+    }
+    w.registered.push(e.name)
+
+    return { value: { command: e.name } }
+  })
   on('tool.register', (_, e) => {
     w.tools.push(`mcp__devloop__${e.name}`)
     w.toolSpecs.push(JSON.parse(JSON.stringify(e)))
 
     return { value: { tool: `mcp__devloop__${e.name}` } }
   })
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_, e) => {
+    if (w.failOpen) {
+      throw new Error('pane unavailable')
+    }
+    w.opened.push((e as { id: string }).id)
+
+    return { value: { isPlaced: true } }
+  })
   on('ui.status', () => ({ value: undefined }))
+  on('ui.log', (_, e) => {
+    w.logs.push(JSON.stringify(e))
+
+    return { value: undefined }
+  })
   on('ui.toast', (_, e) => {
     w.toasts.push(e.text)
 
     return { value: undefined }
   })
-  on('fs.exists', (_, e) => ({ value: e.path in w.files || Object.keys(w.files).some(file => file.startsWith(`${e.path}/`)) }))
+  on('fs.exists', (_, e) => {
+    const failure = w.failing['fs.exists']
+    if (failure !== undefined) {
+      // Denied with the message, which is how the plugin's `await` sees the reason.
+      return { deny: failure }
+    }
+
+    return { value: e.path in w.files || Object.keys(w.files).some(file => file.startsWith(`${e.path}/`)) }
+  })
   on('fs.read', (_, e) => {
     if (w.unreadable.includes(e.path)) {
       throw new Error(`read ${e.path} failed: EIO`)
@@ -209,6 +270,10 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     return { value: w.files[e.path] ?? '' }
   })
   on('fs.write', (_, e) => {
+    if (e.path === w.failWrite) {
+      // The write rejects with this reason, as a full disk's would.
+      return { deny: 'disk full' }
+    }
     w.files[e.path] = e.text
 
     return { value: undefined }
@@ -266,11 +331,21 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
       w.scriptArgs[tag] = args
       switch (tag) {
         case 'snapshot':
+          if (w.isSnapshotBroken) {
+            return answer('', 1)
+          }
+          // Outside a work tree git answers nothing.
+          if (!w.isGit) {
+            return answer('')
+          }
+
           return answer([
             `tree:${w.tree}`, `committable:${w.committable ?? w.tree}`, `headtree:${w.headTree ?? w.committable ?? w.tree}`, `branch:${w.branch}`, 'head:abc', `base:${w.base ?? 'unknown'}`, ...(w.capped === null ? [] : [`capped:${w.capped}`]),
             ...Object.entries(w.ignored).map(([file, blob]) => `ignored:${blob} ${file}`), ...w.hidden.map(file => `hidden:${file}`),
             ...(w.differs.length === 0 ? [] : [`differcount:${w.differs.length}`, ...w.differs.slice(0, 5).map(one => `differs:${one}`)]), `diff:${w.changed.length} ${w.changed.length * 3}`, ...w.changed.map(file => `file:${file}`),
           ].join('\n'))
+        case 'git-probe':
+          return answer(w.isGit ? 'git' : w.gitSubfolders.map(dir => `sub:${dir}`).join('\n'))
         case 'find-base':
           return answer(w.base ?? 'unknown')
         case 'branch':
@@ -348,6 +423,17 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
         }
       }
     }
+    if (w.pythonVersion !== null && e.argv[0] === 'python3') {
+      if (e.argv[1] === '-c' && e.argv[2] === PYTHON_VERSION) {
+        return answer(`${w.pythonVersion}\n`)
+      }
+      if ((e.argv[1] ?? '').endsWith(`/${SCRIPT}`) && e.argv[2] === 'install') {
+        w.argvs.push([...e.argv])
+        w.cacheInstalls.push(e.argv.slice(2))
+
+        return answer(w.cacheInstallExit === 0 ? 'cache-guard installed' : 'installer failed: no write access', w.cacheInstallExit)
+      }
+    }
     w.ran.push(command)
     w.argvs.push([...e.argv])
     if (e.argv[1] === '-lc') {
@@ -377,9 +463,19 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('tool.call', async (_, e) => {
     if (e.tool === 'AskUserQuestion') {
-      const question = e.questions[0]?.question ?? ''
+      const asked = e.questions[0]
+      const question = asked?.question ?? ''
       w.questions.push(question)
       w.onAsk?.()
+      if (asked?.header === 'Setup') {
+        // The setup's questions are answered one by one; Enter takes the first option.
+        const given = w.setupAnswers === null || w.setupAnswers.length === 0 ? undefined : w.setupAnswers.shift()
+        if (given === '<dismiss>') {
+          throw new Error('dismissed')
+        }
+
+        return { result: { questions: e.questions, answers: { [question]: given ?? asked.options[0]?.label ?? '' } } }
+      }
 
       return { result: { questions: e.questions, answers: { [question]: w.answer } } }
     }

@@ -287,7 +287,7 @@ export async function libraryCommand($: Engine, at: Place, cfg: Config | null, w
   }
   if (sub === 'save') {
     if (cfg === null) {
-      return { text: 'This repository is not set up for the loop yet, so it has no approved spec to save. Run /devloop init.' }
+      return { text: 'This repository is not set up for the loop yet, so it has no approved spec to save. Type /devloop to set it up.' }
     }
     const saved = await saveSpec($, at, cfg, await loopOf($), null, actorOf(e))
 

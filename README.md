@@ -119,22 +119,34 @@ claude plugin uninstall devloop@devloop
 ## Set up a project
 
 devloop does nothing to a repository until it opts in. Until then only the
-secrets guard and `/devloop init` are live.
+secrets guard and the setup are live.
 
-1. In your project, run `/devloop init`. It writes `devloop.json` (your
-   policy, in observe mode, with the default branch it finds), `REVIEW.md`,
-   `evals/README.md` and, if there is no `CLAUDE.md`, an `AGENTS.md`. It
-   never overwrites a file that exists, and it suggests test commands from
-   your `package.json`, `pyproject.toml`, `go.mod` or `Cargo.toml`.
-2. Open `devloop.json` and check the `verify` list: these are the commands
-   that decide whether work is done. If `init` found no test command the list
-   is empty, and nothing is checked until you add one.
-3. Commit `devloop.json` to your main branch. The policy is always read from
+1. In your project, type `/devloop`. In a repository that is not set up it
+   starts a short guided setup. Press Enter to take the recommended answer.
+   - How strict? `Watch only (recommended)` or `Block from the start`.
+   - What runs your tests? The commands it found in `package.json`,
+     `pyproject.toml`, `go.mod` or `Cargo.toml`, `None for now`, or type your
+     own. When it finds none: `I'll add it later`.
+   - Who approves risky merges? `Just me (recommended)` or `Two people`.
+   - Only when Python 3.8 or later is found and cache-guard is not
+     installed: add cache-guard? `Yes, everything (recommended)`, `Yes, but
+     keep normal replies` or `Not now`.
+
+   Dismissing a question cancels and writes nothing. At the end it says in
+   plain words what it will do and which files it added: `devloop.json`,
+   `REVIEW.md`, `evals/README.md` and, if there is no `CLAUDE.md`, an
+   `AGENTS.md`. It never overwrites a file that exists. `/devloop init` runs
+   the same setup.
+2. Commit `devloop.json` to your main branch. The policy is always read from
    there, so a change cannot loosen its own rules.
-4. Run `/devloop doctor` to see what is in force.
-5. When you are happy with what it reports, change `"mode": "observe"` to
+3. Run `/devloop doctor` to see what is in force.
+4. When you are happy with what it reports, change `"mode": "observe"` to
    `"mode": "enforce"`. In observe mode devloop only records what it would
    have stopped. Reading a secret file is refused in either mode.
+
+If the folder is not a git repository, setup names the git repository inside it
+when there is one and writes nothing. Otherwise it asks whether to cancel or
+set up anyway.
 
 ## Everyday use
 
@@ -153,6 +165,10 @@ Just ask the agent for what you want. devloop works in the background.
 | `/devloop hooks install` | Add a pre-push git hook that refuses a push that is not green. |
 | `/devloop doctor` | Check the setup. |
 | `/devloop help` | Every command. |
+
+Every action is also in the `/` menu as `/devloop-<action>`. When a person types
+any `/devloop` command in a repository that is set up, it opens the Dev loop panel, including in VS Code's narrow
+Claude panel. If a command fails, it shows the real error.
 
 The agent may push a branch and open a pull request. Merging is yours.
 

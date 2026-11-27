@@ -4402,7 +4402,7 @@ function verificationRow(loop, cfg, tier) {
     return { label, isMet: false, note: `the harness could not verify (${loop.verify.failed ?? "unknown error"}); /devloop verify retries` };
   }
   if (tier === "none") {
-    return { label, isMet: true, note: "nothing to verify" };
+    return { label, isMet: true, note: "no changes yet" };
   }
   if (cfg.verify.length === 0) {
     return { label, isMet: tier === "low", note: "no verify commands in devloop.json: nothing proves the work" };
@@ -6330,6 +6330,9 @@ var HIDDEN_PAST_CAP = "more files with the skip-worktree or assume-unchanged bit
 function readSnapshot(stdout) {
   const lines = stdout.split(`
 `).filter((line) => line !== "");
+  if (stdout.trim() === "") {
+    return { ...NO_SNAPSHOT, isOutsideGit: true };
+  }
   if (lines.some((line) => !TAGGED.test(line))) {
     return NO_SNAPSHOT;
   }
