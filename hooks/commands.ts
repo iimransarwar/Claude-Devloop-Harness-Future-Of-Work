@@ -59,6 +59,7 @@ export const HELP = `/devloop                 where the change stands and what t
 /devloop gate            prove the gate now and answer with an exit code (0 green, 1 not), for CI
 /devloop findings        review findings: open, deferred backlog, resolved
 /devloop findings resolve <id> <note>
+                         (or: /devloop findings resolve all <note>, every finding waiting on you at once)
                          settle a finding that awaits a person's decision (a person's call)
 /devloop done            close the change and reset the loop
 /devloop allow <glob>    exempt paths from the guards for one turn (this one, if the agent is working)
@@ -599,8 +600,26 @@ async function findings($: Engine, at: Place, cfg: Config, words: readonly strin
   if (!isFromPerson(e)) {
     return { text: 'A finding is resolved by a person, from the prompt.' }
   }
+  if (id.toLowerCase() === 'all') {
+    // Every finding that waits on a person, settled in one step with one note, after one confirmation.
+    const waiting = (await loopOf($)).findings.filter(one => one.status === 'open' && one.route === 'decision').map(one => one.id)
+    if (waiting.length === 0) {
+      return { text: 'No finding is waiting for your decision.' }
+    }
+    const note = text === '' ? 'accepted as it is' : text
+    if (!(await confirm($, `Resolve ${waiting.join(', ')} as decided: "${note}"? They stop blocking the change.`, 'Resolve all', 'Leave them open'))) {
+      return { text: `${waiting.join(', ')} stay open.` }
+    }
+    const said: string[] = []
+    for (const one of waiting) {
+      said.push(await resolveFinding($, at, one, note))
+      await audit($, at.root, 'finding-resolved', actorOf(e), one, (await loopOf($)).tree, note.slice(0, 200))
+    }
+
+    return { text: said.join('\n') }
+  }
   if (!/^F\d+$/i.test(id) || text === '') {
-    return { text: 'Name the finding and what was decided: /devloop findings resolve F3 <note>.' }
+    return { text: 'Name the finding and what was decided: /devloop findings resolve F3 <note>, or all of them at once: /devloop findings resolve all <note>.' }
   }
   if (!(await confirm($, `Resolve ${id.toUpperCase()} as decided: "${text}"? It stops blocking the change.`, 'Resolve', 'Leave it open'))) {
     return { text: `${id.toUpperCase()} stays open.` }
