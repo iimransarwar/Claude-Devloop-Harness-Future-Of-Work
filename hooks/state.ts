@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision } from '../types'
+import type { FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
 import { EMPTY_CACHE } from './cache'
 import type { CacheState } from './cache'
 import { parseConfig } from './config'
@@ -90,6 +90,22 @@ export function tabOf($: Engine): Promise<PaneTab> {
 /** Shows another tab of the pane: called from a tab button's handler, never from a render. */
 export async function setTab($: Engine, tab: PaneTab): Promise<void> {
   await update($, TAB, () => tab)
+}
+
+/**
+ * The settings popup's draft, kept until Save or a close: written when the
+ * popup opens and from its pickers' handlers, never while drawing.
+ */
+const SETTINGS = atom({ plugin: 'devloop', key: 'settings' } as const, null as SettingsDraft | null, { shape: 'settings-1' })
+
+/** The settings draft as it stands; read while drawing, it redraws the popup on a change. */
+export function settingsDraftOf($: Engine): Promise<SettingsDraft | null> {
+  return read($, SETTINGS)
+}
+
+/** Changes the settings draft (null drops it): from the command that opens the popup and its handlers. */
+export async function updateSettingsDraft($: Engine, change: (draft: SettingsDraft | null) => SettingsDraft | null): Promise<void> {
+  await update($, SETTINGS, change)
 }
 
 export type Place = {
@@ -272,13 +288,14 @@ export function brief(loop: Loop): string {
 }
 
 /**
- * Changes the loop's state, keeps it for the next session and redraws the
- * status line. Every write goes through here.
+ * Changes the loop's state, keeps it for the next session and clears
+ * any pinned status line. Every write goes through here.
  */
 export async function save($: Engine, root: string, change: (loop: Loop) => Loop): Promise<Loop> {
   const next = await update($, LOOP, loop => ({ ...change(loop), root }))
   await $.store.set(`loop:${root}`, { shape: SHAPE, value: next })
-  $.ui.status(next.phase === 'idle' && next.tier === 'none' ? undefined : `devloop: ${brief(next)}`)
+  // The status row is the AbovePrompt band; clear any line an earlier version pinned.
+  $.ui.status(undefined)
 
   return next
 }

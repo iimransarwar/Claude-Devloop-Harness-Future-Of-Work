@@ -6,7 +6,7 @@
 // but types, so the smoke test can load this file on its own.
 
 /** The harness's own version, carried in every record it writes (plugin.json says the same; smoke.sh checks). */
-export const HARNESS_VERSION = '0.2.0'
+export const HARNESS_VERSION = '0.4.0'
 
 /** The subset of JSON Schema (2020-12) these records use, and the validator below reads. */
 export type Schema = {
@@ -64,6 +64,7 @@ export const AUDIT_ACTIONS = [
   'cache-guard-installed', 'cache-guard-removed', 'harness-state-changed', 'answer-unchecked', 'loop-limit', 'loop-continued',
   'learned-rule-promoted', 'learned-rule-dropped',
   'library-saved', 'library-save-stopped', 'library-path-set', 'library-removed',
+  'settings-changed',
 ] as const
 
 const withTag = (id: string, title: string, properties: Record<string, Schema>, required: readonly string[] = Object.keys(properties)): Schema => ({

@@ -123,6 +123,50 @@ globs, as the dormant module does (D2), and records nothing. Where the `.tasks`
 integration is on, its rules are part of the stateless core too, and the
 classic stop gate runs the convention's session check.
 
+### Settings
+
+`/devloop settings` (or `/devloop-settings`) opens a popup in a set-up
+repository. Arrow keys move, Enter picks. A person's call: anyone else is told
+`Settings are a person's: type /devloop settings.` Picks wait in a draft; a
+changed row shows a `•`. Nothing is written until `Save`; `Cancel` and Esc drop
+the draft.
+
+| Row | Choices and what Save writes |
+| --- | --- |
+| Mode | `Watch only` (`mode: observe`), `Block` (`enforce`). |
+| Tests | The current `verify` list and a `Change` button. It asks: keep the current checks, a detected command, `None for now` (`[]`), or typed text. Any answer but keep replaces the whole `verify` list. |
+| Which tests | `Only those for changed files` (`testing.scope: targeted`), `All of them` (`full`). |
+| Auto review | `On` / `Off` (`autoReview`). |
+| Risky merges | `Just me` (`approvals` 0, 1, 1), `Two people` (0, 1, 2). Any other value shows as `Custom (as in devloop.json)` and writes nothing. |
+| Check before answering | `Same as mode` (removes `grounding.mode`), `Tell me` (`observe`), `Block` (`enforce`), `Off`. |
+| Learn from mistakes | `Trial` (`learning.auto: trial`), `Propose only` (`propose`), `Off`. |
+| Save specs to library | `On` (`library.save: auto`), `Off`. |
+| cache-guard | Shows `installed`, `not installed` or `needs Python 3.8+`, with an `Install` or `Remove` button. It has its own confirmation, applies at once and is not part of Save. |
+
+Save writes only the keys you changed, merging nested objects and keeping
+every other field, then records `settings-changed` in the audit trail. A value
+that `devloop.json` holds but is invalid shows as `Invalid in devloop.json` and
+is never written. If `devloop.json` cannot be parsed, the popup shows the error
+and offers only `Cancel`.
+
+When a change applies depends on the default branch. If it has no
+`devloop.json`, devloop uses the settings now. If it has one, devloop keeps
+using that copy until you commit the change there. The popup says which, and
+so does the message after Save.
+
+Tiers, protected paths, forbidden commands, network, reviewers, budgets and
+checklists stay hand-edited in `devloop.json`.
+
+**The status bar.** While a change is under way, or whenever a change exists,
+a one-line bar above the prompt reads `devloop  <phase>  ·  tests <state>  ·
+review <state>  ·  gate <met>/<total>  ·  <tier> risk`. Tests show `✓ passed`,
+`✗ failing`, `! error`, `not run` or `not set` (no `verify` checks). In amber,
+`not run since the last change` shows when the checks last passed but files
+have changed since.
+Review shows `✓ passed`, `✗ changes asked`, `… running` or `not run`, and is
+left out for low risk. Colors come from the terminal's theme. The Dev loop and
+settings panels use the terminal's own background.
+
 ## The loop
 
 Every change goes the same way: guarded while the agent works, checked when
@@ -706,6 +750,7 @@ the Dev loop panel, including in VS Code's narrow Claude panel, and a command th
 | `/devloop allow <glob>` | Exempt paths from the guards for one turn: the one running, or else the next. A person's call. |
 | `/devloop allow --command <command>` | Let one exact shell command past the guards (not secrets) for one turn: the one running, or else the next. A person's call. |
 | `/devloop budget <usd>` | Set a cost cap for this session, measured against a client-side estimate. A person's call. |
+| `/devloop settings` | Open the settings popup: pick values for the common `devloop.json` settings and Save. A person's call. |
 | `/devloop doctor` | Audit the setup: config errors, verify checks, instruction files and skills, the injection scan, tools in context, sandbox, credentials, what checks can see. |
 | `/devloop doctor --strict` | The same, exiting non-zero when an item is at error level (for CI). |
 | `/devloop handoff` | Record a facts-only handoff entry (kept in the harness's state). A person's call. |

@@ -163,12 +163,16 @@ Just ask the agent for what you want. devloop works in the background.
 | `/devloop learn` | See the rules devloop has proposed from repeated failures. |
 | `/devloop library` | See the specs saved for reuse across your projects. |
 | `/devloop hooks install` | Add a pre-push git hook that refuses a push that is not green. |
+| `/devloop settings` | Change devloop's settings in a popup. |
 | `/devloop doctor` | Check the setup. |
 | `/devloop help` | Every command. |
 
 Every action is also in the `/` menu as `/devloop-<action>`. When a person types
 any `/devloop` command in a repository that is set up, it opens the Dev loop panel, including in VS Code's narrow
 Claude panel. If a command fails, it shows the real error.
+
+While a change is under way, a colored bar above the prompt shows the phase,
+tests, review, the gate and the risk.
 
 The agent may push a branch and open a pull request. Merging is yours.
 
@@ -279,8 +283,9 @@ After changing `hooks/` or `cli/`, rebuild with `bash scripts/build.sh` and
 commit `dist/devloop.mjs`. The smoke test fails if the committed build
 differs from its sources.
 
-**Releasing.** Bump `version` in `.claude-plugin/plugin.json` for every
-release. Claude Code updates an installed plugin only when that version
+**Releasing.** Bump `version` in `.claude-plugin/plugin.json` and
+`HARNESS_VERSION` in `hooks/records.ts` together for every release, then
+rebuild. Claude Code updates an installed plugin only when that version
 changes: with the same number, `claude plugin update devloop@devloop` says
 it is already at the latest version and keeps the old code.
 

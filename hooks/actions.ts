@@ -40,6 +40,7 @@ export const ACTIONS: readonly Action[] = [
   { name: 'review', description: 'Start an independent review round' },
   { name: 'rules', description: 'Learned rules: trial, promoted and waiting proposals', argumentHint: 'promote <id> | drop <id> <reason>' },
   { name: 'sandbox', description: 'Print the sandbox settings that match the policy' },
+  { name: 'settings', description: "Change devloop's settings in a popup (a person's)" },
   { name: 'spec', description: 'Start or reopen a spec; only the spec and its tests change until approved', argumentHint: '<name>' },
   { name: 'verify', description: 'Run the fast and full verify checks now' },
 ]

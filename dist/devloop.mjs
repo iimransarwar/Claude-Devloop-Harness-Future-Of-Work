@@ -4929,7 +4929,7 @@ function pushSends(committable, sent, seen = { hidden: [], differs: [], differCo
 }
 
 // hooks/records.ts
-var HARNESS_VERSION = "0.2.0";
+var HARNESS_VERSION = "0.4.0";
 var str = (maxLength = 300) => ({ type: "string", maxLength });
 var text = (maxLength = 300) => ({ type: "string", maxLength });
 var nullableText = (maxLength = 300) => ({ type: ["string", "null"], maxLength });
@@ -4995,7 +4995,8 @@ var AUDIT_ACTIONS = [
   "library-saved",
   "library-save-stopped",
   "library-path-set",
-  "library-removed"
+  "library-removed",
+  "settings-changed"
 ];
 var withTag = (id, title, properties, required = Object.keys(properties)) => ({
   $schema: "https://json-schema.org/draft/2020-12/schema",

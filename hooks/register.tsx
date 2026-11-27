@@ -7,7 +7,7 @@
 // A repository opts in with a devloop.json at its root; without one only the
 // secrets guard and /devloop (which sets it up) are live.
 
-import type { Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage } from 'claude-code'
+import type { CommandRunInput, CommandRunResult, Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage } from 'claude-code'
 
 import type { Loop, PaneTab } from '../types'
 import { cacheReport, hitRate, meterTurn } from './cache'
@@ -49,7 +49,12 @@ import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, 
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
 import { ACTIONS, commandName, failureText, registerActions } from './actions'
+import { applyChanges, effectLine, readSettings } from './settings'
 import { SET_UP_HEADLINE } from './setup'
+import { barParts } from './statusbar'
+import {
+  SETTINGS_FOOTER, SETTINGS_LABEL, SETTINGS_OPEN, SETTINGS_PANE, absentOf, changeTests, closeSettings, installGuard, isSettings, openedWithOf, pickSetting, pythonMissing, removeGuard, saveSettings, settingsCommand, unreadableOf,
+} from './settingspane'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
   matchesAny, maybeWrittenByReading, namedPlacesByReading, NEVER_LIFTED, place, relative, shipLookups, shipsOf, strictest, whereOf, writtenPaths, writtenPathsByReading, writesOpenPath,
@@ -64,7 +69,7 @@ import type { TasksFacts } from './tasks'
 import {
   abandonStale, addOpenQuestion, brief, bump, cacheOf, recordLesson, checkReviewDiff, currentBranch, envFor, factsOf, filesUnder, forget, git, heldMainRoot, heldPolicy, coverageNow, locate, look, loopOf, markError,
   metrics, modeInForce, modeOf, note, outputPath, policyInForce, questionsOf, readFeatures, record, refresh, remoteOf, restore, runFeatures, save, saveCache, sectionOf,
-  setSection, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, verifyNow, withGlobs, withSnapshot, placesOf,
+  setSection, settingsDraftOf, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, updateSettingsDraft, verifyNow, withGlobs, withSnapshot, placesOf,
 } from './state'
 import type { Engine, Place } from './state'
 import { fixAdvice, RULES } from './templates'
@@ -237,8 +242,26 @@ async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): 
   }
   const at = await locate($).catch(() => null)
   if (at !== null && at.isOptedIn) {
-    void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
+    void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop', backgroundColor: 'transparent' })).catch(() => undefined)
   }
+}
+
+/**
+ * Answers one /devloop command for its hook (/devloop or a menu entry). A
+ * person's answer opens the Dev loop pane, except where it opened the settings
+ * popup: that is the one pane its command opens.
+ */
+async function answerCommand($: Engine, e: CommandRunInput, turnId: string | null): Promise<CommandRunResult> {
+  const answer = isSettings(e.args) ? await settingsCommand($, e) : await command($, e, turnId)
+  // The tools are already registered, the same as in any session: setup changes no tool.
+  if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
+    await registerActions($, true).catch(() => undefined)
+  }
+  if (answer.text !== SETTINGS_OPEN) {
+    await openForPerson($, e)
+  }
+
+  return answer
 }
 
 /** Registers every tool, the same specs in every session (see TOOL_SPECS). */
@@ -894,7 +917,7 @@ export const register: Register = on => {
     await registerActions($, at?.isOptedIn === true).catch(() => undefined)
     if (at !== null && at.isOptedIn) {
       if (e.isInteractive) {
-        void $.ui.open({ id: PANE, title: 'Dev loop' })
+        void $.ui.open({ id: PANE, title: 'Dev loop', backgroundColor: 'transparent' })
       }
       // A new model is the moment to re-run the evals and prune what the old one needed.
       const model = await $.session.model().catch(() => '')
@@ -910,28 +933,23 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'devloop' }, async ($, e) => {
-    // An exemption granted while a turn runs belongs to that turn.
-    const answer = await command($, e, turnId)
-    // The tools are already registered, the same as in any session: setup changes no tool.
-    if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
-      await registerActions($, true).catch(() => undefined)
-    }
-    await openForPerson($, e)
-
-    return answer
-  }).catch((_, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
+  // An exemption granted while a turn runs belongs to that turn.
+  on('command.run', { command: 'devloop' }, ($, e) => answerCommand($, e, turnId))
+    .catch((_, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
 
   // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
   for (const a of ACTIONS) {
-    on('command.run', { command: commandName(a) }, async ($, e) => {
-      const answer = await command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId)
-      await openForPerson($, e)
-
-      return answer
-    })
+    on('command.run', { command: commandName(a) }, ($, e) => answerCommand($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId))
       .catch((_, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
   }
+
+  // Esc closes the settings popup as Cancel does: the draft goes with it.
+  on('ui.close', { id: SETTINGS_PANE }, async ($, e, next) => {
+    const closed = await next(e)
+    await updateSettingsDraft($, () => null)
+
+    return closed
+  }).catch(() => undefined)
 
   // The rules, said once per thread; the guards below are what holds them.
   // One text for every repository and every state (RULES), sent where the
@@ -2085,7 +2103,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>This repository is not set up for the loop.</Text>
-          <Text dimColor>Type /devloop to set it up.</Text>
+          <Text color="subtle">Type /devloop to set it up.</Text>
         </Box>
       )
     }
@@ -2109,37 +2127,37 @@ export const register: Register = on => {
       const theirs = Object.values(claims).filter(one => one.spec === loop.spec && now < one.until && seatOf(one) !== seat)
       const regressions = Object.entries(loop.regressions)
       body = [
-        loop.phase !== 'build' ? <Text dimColor>No approved spec: features are built against one (/devloop spec, then /devloop approve).</Text> : <Progress label="Features" value={passing} max={Math.max(1, total)} valueText={`${passing}/${total}`} />,
+        loop.phase !== 'build' ? <Text color="subtle">No approved spec: features are built against one (/devloop spec, then /devloop approve).</Text> : <Progress label="Features" value={passing} max={Math.max(1, total)} valueText={`${passing}/${total}`} />,
         ...Object.entries(loop.features).map(([id, one]) => (
-          <Text color={one.passes && one.tree === loop.tree ? undefined : 'warning'} wrap="truncate-end">
+          <Text color={one.passes && one.tree === loop.tree ? 'success' : 'warning'} wrap="truncate-end">
             {one.passes && one.tree === loop.tree ? '[x]' : '[ ]'} {id}{one.passes && one.tree !== loop.tree ? ' (passed on an earlier tree)' : theirs.some(each => each.feature === id) ? ` (claimed by ${theirs.find(each => each.feature === id)?.name ?? 'another session'})` : ready.includes(id) && !one.passes ? ' (ready)' : ''}
           </Text>
         )),
-        regressions.length > 0 && <Text dimColor>Regression checks: {regressions.filter(([, one]) => one.passes === true && one.tree === loop.tree).length}/{regressions.length} pass on this tree</Text>,
+        regressions.length > 0 && <Text color="subtle">Regression checks: {regressions.filter(([, one]) => one.passes === true && one.tree === loop.tree).length}/{regressions.length} pass on this tree</Text>,
       ]
     } else if (tab === 'findings') {
       const open = loop.findings.filter(one => one.status === 'open')
       body = [
         <Text bold>{open.length === 0 ? 'No open findings' : `${open.length} open finding${open.length === 1 ? '' : 's'}`}</Text>,
         ...open.slice(0, 12).map(one => (
-          <Text color={one.isBlocking ? 'warning' : undefined} wrap="truncate-end">
+          <Text color={one.isBlocking ? 'error' : undefined} wrap="truncate-end">
             {one.id} {one.severity} {one.file === '' ? '' : `${one.file}:${one.line} `}{one.problem}{one.route === 'decision' ? ' [yours to decide]' : ''}
           </Text>
         )),
-        loop.findings.some(one => one.status === 'resolved') && <Text dimColor>Resolved by a person: {loop.findings.filter(one => one.status === 'resolved').map(one => one.id).join(', ')}</Text>,
-        loop.review.summary !== null && <Text dimColor wrap="truncate-end">{loop.review.summary}</Text>,
+        loop.findings.some(one => one.status === 'resolved') && <Text color="subtle">Resolved by a person: {loop.findings.filter(one => one.status === 'resolved').map(one => one.id).join(', ')}</Text>,
+        loop.review.summary !== null && <Text color="subtle" wrap="truncate-end">{loop.review.summary}</Text>,
       ]
     } else if (tab === 'activity') {
       const recent = (await auditOf($, root).catch(() => [] as AuditEvent[])).slice(-5)
       // The failed rounds on this branch (DESIGN 4.16): what the loop limit counted, as last kept.
       const failedRounds = limitLines(loop.limit ?? NO_LIMIT, cfg)
       body = [
-        loop.events.length === 0 && <Text dimColor>Nothing yet.</Text>,
-        ...loop.events.slice(-8).map(event => <Text dimColor wrap="truncate-end">{event.kind}: {event.text}</Text>),
+        loop.events.length === 0 && <Text color="subtle">Nothing yet.</Text>,
+        ...loop.events.slice(-8).map(event => <Text color="subtle" wrap="truncate-end">{event.kind}: {event.text}</Text>),
         failedRounds.length > 0 && <Text bold>Failed rounds</Text>,
-        ...failedRounds.map(line => <Text dimColor wrap="truncate-end">{line}</Text>),
+        ...failedRounds.map(line => <Text color="subtle" wrap="truncate-end">{line}</Text>),
         recent.length > 0 && <Text bold>Audit trail</Text>,
-        ...recent.map(one => <Text dimColor wrap="truncate-end">{auditLine(one)}</Text>),
+        ...recent.map(one => <Text color="subtle" wrap="truncate-end">{auditLine(one)}</Text>),
       ]
     } else if (tab === 'metrics') {
       const computed = computeMetrics({
@@ -2150,13 +2168,13 @@ export const register: Register = on => {
     } else {
       body = [
         tier !== 'none' && <Text bold>{isShippable(loop, cfg, facts) ? 'Gate: green' : 'Gate: not green'}</Text>,
-        tier === 'none' && <Text dimColor>{loop.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
+        tier === 'none' && <Text color="subtle">{loop.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
         ...(tier === 'none' ? [] : checks.map(check => (
-          <Text color={check.isMet ? undefined : 'warning'} wrap="truncate-end">
+          <Text color={check.isMet ? 'success' : 'warning'} wrap="truncate-end">
             {check.isMet ? '[x]' : '[ ]'} {check.label}: {check.note}
           </Text>
         ))),
-        tier !== 'none' && <Text dimColor>Merge: {approvers(tier, cfg)}</Text>,
+        tier !== 'none' && <Text color="subtle">Merge: {approvers(tier, cfg)}</Text>,
         <Box>
           <Button key="verify" label="Verify" onPress={act('verify')} />
           <Text> </Text>
@@ -2170,18 +2188,128 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text bold>{loop.phase === 'idle' ? 'Small-fix mode' : `${loop.phase === 'spec' ? 'Writing spec' : 'Building'}: ${loop.spec ?? ''}`}</Text>
-        <Text dimColor>
+        <Text color="subtle">
           {modeInForce(at) === 'observe' ? 'observe mode (guards record, do not refuse) · ' : ''}
           {tier === 'none' ? 'no changes yet' : `${loop.changed.length} files changed · ${tier} risk`}
         </Text>
-        {errors.map(error => <Text color="warning" wrap="truncate-end">devloop.json: {error}</Text>)}
-        {loop.blocked !== null && <Text color="warning" wrap="truncate-end">Blocked: {loop.blocked.reason}</Text>}
+        {errors.map(error => <Text color="error" wrap="truncate-end">devloop.json: {error}</Text>)}
+        {loop.blocked !== null && <Text color="error" wrap="truncate-end">Blocked: {loop.blocked.reason}</Text>}
         {loop.evalRun !== null && <Text>Evals: {loop.evalRun.current === null ? 'between tasks' : `task ${loop.evalRun.current.id}, trial ${loop.evalRun.current.trial + 1}`}</Text>}
         <Box>
-          {tabs.map(([id, label]) => <Button key={`tab-${id}`} label={tab === id ? `[${label}]` : label} onPress={show(id)} />)}
+          {tabs.map(([id, label]) => <Button key={`tab-${id}`} label={tab === id ? `[${label}]` : label} onPress={show(id)}>{tab === id ? <Text bold color="suggestion">[{label}]</Text> : <Text>{label}</Text>}</Button>)}
         </Box>
         {body}
-        <Text dimColor wrap="truncate-end">{root}</Text>
+        <Text color="subtle" wrap="truncate-end">{root}</Text>
+      </Box>
+    )
+  })
+
+  // The status row above the prompt: where the loop stands, in color, in one
+  // line. Drawing writes nothing; no row when there is nothing to show.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) {
+      return next(e)
+    }
+    const loop = await loopOf($)
+    const at = await look($)
+    const policy = heldPolicy(at)
+    const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)))
+    if (parts === null) {
+      return next(e)
+    }
+    const { Box, Progress, Text } = $.ui.resolve(e)
+
+    return (
+      <Box>
+        <Text bold color="suggestion">devloop</Text>
+        <Text>  {parts.phase}  ·  tests </Text>
+        <Text color={parts.tests.color}>{parts.tests.text}</Text>
+        {parts.review !== null && <Text>  ·  review </Text>}
+        {parts.review !== null && <Text color={parts.review.color}>{parts.review.text}</Text>}
+        <Text>  ·  </Text>
+        <Progress label="gate" value={parts.gate.met} max={Math.max(1, parts.gate.total)} valueText={`${parts.gate.met}/${parts.gate.total}`} />
+        <Text>  ·  </Text>
+        <Text color={parts.risk.color}>{parts.risk.text}{parts.risk.text === 'no changes' ? '' : ' risk'}</Text>
+      </Box>
+    )
+  })
+
+  // The settings popup: a picker per setting from the working tree's
+  // devloop.json, the draft's picks over it, Save and Cancel. Drawing writes
+  // nothing and runs nothing; the draft is written from the handlers.
+  on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
+    const { Box, Button, Select, Text } = $.ui.resolve(e)
+    const at = await look($)
+    const text = at.text
+    const view = text === null ? { error: '' } : readSettings(text)
+    const cancel = <Button key="cancel" label="Cancel" onPress={() => closeSettings($)} />
+    if (text === null || 'error' in view) {
+      // Never written over: only Cancel.
+      return (
+        <Box flexDirection="column">
+          <Text color="error" wrap="wrap">{text === null ? absentOf(heldPolicy(at)) : unreadableOf('error' in view ? view.error : '')}</Text>
+          <Box>{cancel}</Box>
+        </Box>
+      )
+    }
+    const draft = await settingsDraftOf($)
+    const opened = draft?.openedWith ?? openedWithOf(view)
+    const changes = draft?.changes ?? {}
+    // The tests row shows the checks a Save would write.
+    const after = changes.verify === undefined ? view : readSettings(applyChanges(text, { verify: changes.verify }))
+    const tests = 'rows' in after ? after.rows.find(row => row.key === 'tests') : undefined
+    // The policy devloop last held: whether the base branch's copy governs, and the base's name.
+    const policy = heldPolicy(at)
+    const guard = (await guardNow($).catch(() => null))?.hasStatusLine === true ? 'installed' : pythonMissing() ? 'no-python' : 'available'
+    const label = (name: string) => <Text> {name.padEnd(SETTINGS_LABEL)}</Text>
+    const mark = (isChanged: boolean) => <Text color={isChanged ? 'suggestion' : undefined}>{isChanged ? '•' : ' '}</Text>
+    const rows = view.rows.flatMap(row => {
+      if (row.key === 'tests') {
+        return [
+          <Box>
+            {mark(changes.verify !== undefined)}
+            {label(row.label)}
+            <Text wrap="truncate-end">{tests?.current ?? row.current} </Text>
+            <Button key="tests-change" label="Change" onPress={() => changeTests($)} />
+          </Box>,
+          row.error !== null && <Text color="error" wrap="wrap">  {row.error}</Text>,
+        ]
+      }
+      const key = row.key
+
+      return [
+        <Box>
+          {mark(changes[key] !== undefined)}
+          {label(row.label)}
+          <Select
+            key={`row-${key}`}
+            options={row.options}
+            value={changes[key] ?? row.current}
+            autoFocus={key === 'mode' ? true : undefined}
+            onSelect={value => pickSetting($, key, value, opened)}
+          />
+        </Box>,
+        row.error !== null && <Text color="error" wrap="wrap">  {row.error}</Text>,
+      ]
+    })
+
+    return (
+      <Box flexDirection="column">
+        {rows}
+        <Box>
+          {mark(false)}
+          {label('cache-guard')}
+          <Text>{guard === 'installed' ? 'installed' : guard === 'available' ? 'not installed' : 'needs Python 3.8+'} </Text>
+          {guard === 'installed' && <Button key="cache-remove" label="Remove" onPress={() => removeGuard($)} />}
+          {guard === 'available' && <Button key="cache-install" label="Install" onPress={() => installGuard($)} />}
+        </Box>
+        <Text color="subtle" wrap="wrap">{effectLine(policy?.cfg.defaultBranch ?? DEFAULTS.defaultBranch, policy?.source === 'base', false)}</Text>
+        <Text color="subtle" wrap="wrap">{SETTINGS_FOOTER}</Text>
+        <Box>
+          <Button key="save" label="Save" variant="primary" onPress={() => saveSettings($)} />
+          <Text> </Text>
+          {cancel}
+        </Box>
       </Box>
     )
   })

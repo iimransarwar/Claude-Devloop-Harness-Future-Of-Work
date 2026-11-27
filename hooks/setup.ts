@@ -123,7 +123,7 @@ export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonl
  * obvious (DESIGN 4.16): a Go, Rust or Python suite covers that language's
  * files and its manifests.
  */
-async function detectVerify($: Engine, root: string): Promise<Detected[]> {
+export async function detectVerify($: Engine, root: string): Promise<Detected[]> {
   const found: Detected[] = []
   const has = (file: string): Promise<boolean> => $.fs.exists(`${root}/${file}`)
   if (await has('package.json')) {

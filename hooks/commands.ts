@@ -50,6 +50,7 @@ import { FEATURES, spec as specFile } from './templates'
 
 export const HELP = `/devloop                 where the change stands and what the gate still needs
 /devloop init            set this repository up for the loop
+/devloop settings        change devloop's settings in a popup (a person's)
 /devloop spec <name>     start (or reopen) a spec; only the spec and its tests change until approved
 /devloop approve         approve the spec as written and unlock the build (a person's call)
 /devloop verify          run the fast and full verify checks now

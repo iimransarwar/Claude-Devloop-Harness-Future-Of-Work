@@ -9,11 +9,11 @@ test('ACTIONS covers every /devloop <word> in HELP except init, plus help', () =
   const words = new Set([...HELP.matchAll(/^\/devloop ([a-z]+)/gm)].map(m => m[1]))
   words.delete('init'); words.add('help')
   expect(new Set(ACTIONS.map(a => a.name))).toEqual(words)
-  expect(ACTIONS.length).toBe(32)
+  expect(ACTIONS.length).toBe(33)
 })
-test('set up: all 32 register', async ($, on) => {
+test('set up: all 33 register', async ($, on) => {
   const w = world(on); await start($)
-  expect(w.registered.filter(n => n.startsWith('devloop-')).length).toBe(32)
+  expect(w.registered.filter(n => n.startsWith('devloop-')).length).toBe(33)
 })
 test('not set up: only the four policy-free ones', async ($, on) => {
   const w = world(on, null); await start($)
