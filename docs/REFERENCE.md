@@ -50,7 +50,7 @@ Dismissing any of them cancels and writes nothing.
 | How strict | `Watch only (recommended)`, `Block from the start` | `"mode"`: `observe` or `enforce`. |
 | What runs your tests | the commands found, `None for now`, or your own under Other; `I'll add it later` when none are found | The `verify` list. |
 | Who approves risky merges | `Just me (recommended)`, `Two people` | `approvals` of `low 0, medium 1, high 1` for one person; the defaults (`high 2`) for two. |
-| Cache-guard (only when Python 3.8 or later is found and it is not installed) | `Yes, everything (recommended)`, `Yes, but keep normal replies`, `Not now` | `cache install --all`, `cache install --notify`, or nothing. |
+| Cache-guard (only when Python 3.8 or later is found and it is not installed) | `Yes, everything (recommended)`, `Yes, but keep normal replies`, `Not now` | `cache install --all`, `cache install --notify`, or nothing. `--all` also keeps the cache warm while you are away (see below). |
 
 It then writes `devloop.json` (with the default branch it finds),
 `REVIEW.md`, `evals/README.md` and, if there is no `CLAUDE.md`, an
@@ -1176,7 +1176,10 @@ reports, in one standard-library Python file. It is optional and needs Python
   backs up and edits `~/.claude/settings.json`. Uninstalling does not put
   back a status line you had before installing it: that stays in the
   backups (`~/.claude/settings.json.bak-*`), and the dialog says so. The
-  agent cannot run the script itself (rule `cache-guard`).
+  agent cannot run the script itself (rule `cache-guard`). `--all` also
+  keeps the cache warm while you are away: about one ping an hour, which uses
+  a little quota, and it stops after 12 hours or when you are back. Your Mac
+  must stay awake. Add `--no-keepwarm` to leave it off.
 - `/devloop cache doctor`, `/devloop cache report [--all] [--days N]
   [session]`, `/devloop cache status`: read-only. A session id is 8 to 64
   letters, digits and hyphens; `--days` is given once.

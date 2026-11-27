@@ -254,7 +254,7 @@ describe('settings popup', () => {
   test('cache-guard Install asks its own confirmation and runs --all', async ($, on) => {
     const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Install it'; await start($); await devloop($, 'settings')
     const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'cache-install' })
-    expect(w.cacheInstalls).toEqual([['install', '--all']])
+    expect(w.cacheInstalls).toEqual([['install', '--all', '--keepwarm']])
   })
   test('cache-guard Install declined changes nothing', async ($, on) => {
     const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Leave it'; await start($); await devloop($, 'settings')

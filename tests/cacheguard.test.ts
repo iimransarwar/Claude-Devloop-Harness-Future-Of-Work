@@ -65,6 +65,8 @@ describe('the commands\' pure parts', () => {
   test('install flags: each known one with its README line; anything else is refused', () => {
     expect(installFlags(['--trim', '--keepwarm', '--trim'])).toEqual({ flags: ['--trim', '--keepwarm'] })
     expect(installFlags(['--trim', '--everything'])).toEqual({ unknown: '--everything' })
+    expect(installFlags(['--all'])).toEqual({ flags: ['--all', '--keepwarm'] })
+    expect(installFlags(['--all', '--no-keepwarm'])).toEqual({ flags: ['--all', '--no-keepwarm'] })
     expect(Object.keys(INSTALL_FLAGS).sort()).toEqual(['--all', '--handoff', '--keepwarm', '--lean', '--no-handoff', '--no-keepwarm', '--no-notify', '--no-trim', '--notify', '--trim'])
     const question = installQuestion(['--trim', '--handoff', '--no-notify'])
     expect(question).toMatch(/copy itself to ~\/\.claude\/cache-guard\//)

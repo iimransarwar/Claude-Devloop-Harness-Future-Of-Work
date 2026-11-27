@@ -204,8 +204,14 @@ describe('guided setup on /devloop', () => {
     const w = world(on, null); w.pythonVersion = '3.12'; await start($)
     const said = await devloop($, '')
     expect(w.questions.length).toBe(4)
-    expect(w.cacheInstalls).toEqual([['install', '--all']])
+    expect(w.cacheInstalls).toEqual([['install', '--all', '--keepwarm']])
     expect(said).toMatch(/cache-guard: installed \(everything\)\. Restart Claude Code/)
+  })
+  test('the cache question discloses keep-warm pings and quota', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; await start($)
+    await devloop($, '')
+    expect(w.questions[3]).toMatch(/keeps the cache warm while you are away/)
+    expect(w.questions[3]).toMatch(/uses a little of your quota/)
   })
   test('keep normal replies installs with --notify', async ($, on) => {
     const w = world(on, null); w.pythonVersion = '3.12'; w.setupAnswers = ['Watch only (recommended)', 'None for now', 'Just me (recommended)', 'Yes, but keep normal replies']; await start($)

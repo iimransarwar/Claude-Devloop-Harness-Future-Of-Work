@@ -253,6 +253,9 @@ runs the gate in GitHub Actions.
 A status line that shows what Claude's prompt cache is saving you, warnings
 before moves that throw a warm cache away, and cost reports. Bundled, off by
 default, needs Python 3.8 or later. Turn it on with `/devloop cache install`.
+The `--all` choice (and `Yes, everything` in setup) also keeps the cache warm
+while you are away: about one ping an hour, which uses a little quota. It
+stops after 12 hours or when you are back, and your Mac must stay awake.
 
 ## What is in this repository
 
