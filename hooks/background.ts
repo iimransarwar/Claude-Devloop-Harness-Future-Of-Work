@@ -291,7 +291,7 @@ async function report($: Engine, at: Place, cfg: Config, run: string, record: Ch
     return
   }
   if (record.outcome !== 'fail') {
-    $.ui.toast(`devloop: ${infraAdvice(run, record.outcome, cfg.verifyTimeoutSec)}`, { timeoutMs: 15_000 })
+    $.ui.toast(`devloop: ${infraAdvice(run, record.outcome, cfg.verifyTimeoutSec, true)}`, { timeoutMs: 15_000 })
 
     return
   }

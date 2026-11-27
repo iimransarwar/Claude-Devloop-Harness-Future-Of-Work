@@ -324,7 +324,8 @@ export async function restore($: Engine, root: string, sessionId: string | null)
         ...base,
         root,
         sessionId,
-        review: base.review.status === 'running' ? { ...base.review, status: 'none' as const, agentId: null, agents: [] } : base.review,
+        // A round whose session ended gave no verdict: like an interrupted round, it does not use up the cap.
+        review: base.review.status === 'running' ? { ...base.review, status: 'none' as const, agentId: null, agents: [], round: Math.max(0, base.review.round - 1) } : base.review,
         allow: [],
         refusals: FRESH.refusals,
         blocked: null,
@@ -379,7 +380,7 @@ export async function abandonStale($: Engine, root: string): Promise<void> {
   const loop = await loopOf($)
   const now = await $.clock.now()
   if (loop.review.status === 'running' && now - loop.review.at > REVIEW_LIFETIME_MS) {
-    await save($, root, before => note({ ...before, review: { ...before.review, status: 'none', agentId: null, agents: [] } }, 'review', `review round ${before.review.round} abandoned: no verdict in 30 minutes`, now))
+    await save($, root, before => note({ ...before, review: { ...before.review, status: 'none', agentId: null, agents: [], round: Math.max(0, before.review.round - 1) } }, 'review', `review round ${before.review.round} abandoned: no verdict in 30 minutes (it does not count toward the cap)`, now))
   }
 }
 

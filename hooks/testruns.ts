@@ -103,7 +103,7 @@ export function backgroundNotice(loop: Loop, cfg: Config, now: number): string |
       case 'fail':
         return [[`${name} failed in the background on this tree (${ago(one.durationMs ?? 0)}):`, one.lines, one.saved === null ? '' : `The whole output is in ${one.saved}.`].filter(part => part !== '').join('\n')]
       case 'could not run':
-        return [infraAdvice(one.run, recordOn(loop, one.run)?.outcome ?? 'killed', cfg.verifyTimeoutSec)]
+        return [infraAdvice(one.run, recordOn(loop, one.run)?.outcome ?? 'killed', cfg.verifyTimeoutSec, true)]
       default:
         return []
     }

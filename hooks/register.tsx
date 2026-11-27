@@ -1785,6 +1785,10 @@ export const register: Register = on => {
     if (isReviewerAgent(await loopOf($), e.agentId)) {
       return { result: 'A reviewer cannot start a review round.' }
     }
+    // Only the main agent declares its change ready (rule 13): a subagent, an eval's included, cannot start a round.
+    if (e.agentId !== undefined) {
+      return { result: 'Only the main agent asks for a review, once the whole change is done.' }
+    }
     // The tree as it stands, as /devloop review takes it: an edit since the last stop is in the round.
     const { snap, policy } = found
     const cfg = policy.cfg
