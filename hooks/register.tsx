@@ -42,11 +42,11 @@ import { syncRegressions } from './regress'
 import { auditLine, clip } from './records'
 import type { Actor, AuditEvent } from './records'
 import { abandonBackground, startBackground } from './background'
-import { approvalsFor, approvers, featureCounts, gate, isShippable, tierFor } from './gate'
+import { approvalsFor, approvers, featureCounts, gate, isShippable, reviewRefusal, tierFor } from './gate'
 import { backgroundNotice } from './testruns'
 import { digest, infraAdvice } from './output'
 import { formatFinding } from './findings'
-import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewerChecks } from './review'
+import { closeShippedReview, finishReview, isReviewedHere, isReviewerAgent, maybeReview, reviewerChecks, startReview } from './review'
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
@@ -81,6 +81,7 @@ import type { TestEdit } from './weaken'
 const PANE = 'devloop'
 const FEATURE_CHECK = 'mcp__devloop__feature_check'
 const STATUS = 'mcp__devloop__devloop_status'
+const REVIEW = 'mcp__devloop__devloop_review'
 const BLOCKED = 'mcp__devloop__devloop_blocked'
 const HANDOFF = 'mcp__devloop__devloop_handoff'
 const QUESTION = 'mcp__devloop__devloop_question'
@@ -122,6 +123,13 @@ export const TOOL_SPECS = [
       type: 'object',
       properties: { detail: { type: 'boolean', description: 'Add the cache meter and the context-cost estimate' } },
     },
+    isDeferred: true,
+  },
+  {
+    name: 'devloop_review',
+    description:
+      'Asks for an independent review round on the change as it stands. Call it once, when the whole change is done, not after each step. The harness starts a separate read-only reviewer in a fresh context when the change has some risk, its tree is not yet reviewed, rounds are left and none is running, and answers in one line; it runs and waits on no tests. Do not edit files until the verdict arrives.',
+    inputSchema: { type: 'object', properties: {} },
     isDeferred: true,
   },
   {
@@ -1762,6 +1770,36 @@ export const register: Register = on => {
       ].join('\n'),
     }
   }).catch(() => ({ result: 'devloop: the status could not be read.' }))
+
+  // The agent declares the change ready (rule 13): a round starts on the tree
+  // as it stands, under the rules every automatic round shares, and runs and
+  // waits on no tests. A reviewer never starts one.
+  on('tool.run', { tool: REVIEW }, async ($, e) => {
+    const at = await locate($)
+    const found = at.isOptedIn ? await snapshotInForce($, at) : null
+    if (found === null) {
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is no review.' }
+    }
+    if (isReviewerAgent(await loopOf($), e.agentId)) {
+      return { result: 'A reviewer cannot start a review round.' }
+    }
+    // The tree as it stands, as /devloop review takes it: an edit since the last stop is in the round.
+    const { snap, policy } = found
+    const cfg = policy.cfg
+    const loop = await save($, at.root, before => withSnapshot(before, snap, cfg))
+    const refused = reviewRefusal(loop, cfg, await isReviewedHere($, at, cfg, loop))
+    if (refused !== null) {
+      return { result: refused }
+    }
+    // The loop limit refuses it with the limit's own message; a reviewer that cannot start says so.
+    const started = await startReview($, at, true)
+
+    return { result: (await loopOf($)).review.status === 'running' ? `${started} Do not edit files until its verdict arrives: a verdict on a tree that has changed is discarded.` : started }
+  }).catch(($, _e, next) => {
+    $.ui.log(`devloop: devloop_review failed: ${String(next.error)}`, { to: 'debug' })
+
+    return { result: 'devloop: the review round could not be started.' }
+  })
 
   // A clean way to stop: the builder says what blocks it, the person hears it,
   // and the stop gate lets the turn end.

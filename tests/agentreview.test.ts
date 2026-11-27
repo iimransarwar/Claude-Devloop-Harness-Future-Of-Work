@@ -4,6 +4,8 @@ import { DEFAULTS } from '../hooks/config'
 import type { Config } from '../hooks/config'
 import { FRESH } from '../hooks/fresh'
 import { isCapSpent, reviewRefusal } from '../hooks/gate'
+import { TOOL_SPECS } from '../hooks/register'
+import { RULES } from '../hooks/templates'
 import type { Loop } from '../types'
 import { approved, bash, change, CONFIG, devloop, edit, feature, start, stop, world } from './world'
 import type { Dollar, World } from './world'
@@ -218,3 +220,74 @@ for (const shape of ['loop-12', 'loop-13']) {
     expect(await push($)).toMatch(/Review round 1 of 2 started/)
   })
 }
+
+// ---------------------------------------------------------------- the devloop_review tool (§2, rules 4, 13, 15)
+
+const ask = async ($: Dollar, agentId?: string): Promise<string> =>
+  String((await $.tool.call({ tool: 'mcp__devloop__devloop_review', ...(agentId === undefined ? {} : { agentId }) })).result)
+/** The builder edits a file, which moves the tree, and goes on working: no stop. */
+async function ready($: Dollar, w: World, file = 'src/a.ts'): Promise<void> {
+  w.files[`/repo/${file}`] = 'export const a = 1'; await edit($, `/repo/${file}`); change(w, file)
+}
+const DO_NOT_EDIT = 'Do not edit files until its verdict arrives: a verdict on a tree that has changed is discarded.'
+
+test('§2: devloop_review starts a round mid-turn on the tree as it stands, running no tests', async ($, on) => {
+  const w = world(on); await start($); await ready($, w); const ran = w.ran.length
+  expect(await ask($)).toBe(`Review round 1 of 2 started in a fresh context. Its verdict will show in the Dev loop pane. ${DO_NOT_EDIT}`)
+  expect([w.ran.length, w.spawned.length]).toEqual([ran, 1])
+  expect(loopIn(w).review).toMatchObject({ status: 'running', round: 1, tree: w.tree, isAuto: true })
+})
+test('§2: otherwise it says why not, in one line', async ($, on) => {
+  const w = world(on); await start($); await ready($, w); await ask($)
+  expect(await ask($)).toBe('Review round 1 is already running.')
+  expect(await ask($, 'agent-1')).toBe('A reviewer cannot start a review round.')
+  await answer($, 'agent-1', 'VERDICT: PASS')
+  expect(await ask($)).toBe('This tree was already reviewed in round 1.')
+  expect(w.spawned.length).toBe(1)
+})
+test('rule 4: with autoReview off it is refused', async ($, on) => {
+  const w = world(on, { ...CONFIG, autoReview: false }); await start($); await ready($, w)
+  expect(await ask($)).toBe('autoReview is off: a person starts rounds with /devloop review')
+  expect(w.spawned).toEqual([])
+})
+test('rule 4: not while a spec is written', async ($, on) => {
+  const w = world(on); await start($); w.files['/repo/specs/login/SPEC.md'] = '# login'; await devloop($, 'spec login'); await ready($, w)
+  expect(await ask($)).toBe('A spec is being written: review rounds start once a person approves it.')
+})
+test('§2: a low-risk change needs no round, and no change has nothing to review', async ($, on) => {
+  const w = world(on); await start($)
+  expect(await ask($)).toBe('Nothing has changed, so there is nothing to review.')
+  await ready($, w, 'docs/guide.md')
+  expect(await ask($)).toBe('This change is low risk, so it needs no review round.')
+  expect(w.spawned).toEqual([])
+})
+test('rule 4: at the loop limit it is refused with the limit message', async ($, on) => {
+  const w = world(on, { ...CONFIG, loop: { failedRounds: 1 } }); await start($)
+  w.exits['npm test'] = 1; await fix($, w); w.exits['npm test'] = 0
+  expect(await ask($)).toMatch(/Loop limit: 1 failed round on this branch/)
+  expect(w.spawned).toEqual([])
+})
+test('rule 4: where the repository has not opted in there is no review', async ($, on) => {
+  const w = world(on, null); await start($); await ready($, w)
+  expect(await ask($)).toBe('This repository has not opted in to devloop (no devloop.json), so there is no review.')
+})
+test('rule 15: after a pass and more edits, the tool starts a new cycle at round 1; the cap bounds the cycle it starts', async ($, on) => {
+  const w = world(on); await start($); await ready($, w); await ask($)
+  await answer($, 'agent-1', 'VERDICT: PASS')
+  await ready($, w, 'src/b.ts')
+  expect(await ask($)).toBe(`Review round 1 of 2 started in a fresh context. Its verdict will show in the Dev loop pane. ${DO_NOT_EDIT}`)
+  await answer($, 'agent-2', `${F_HIGH}\nVERDICT: FAIL`)
+  await ready($, w)
+  expect(await ask($)).toMatch(/^Review round 2 of 2 started/)
+  await answer($, last(w)?.agentId ?? '', `${F_HIGH}\nVERDICT: FAIL`)
+  await ready($, w, 'src/c.ts')
+  expect(await ask($)).toBe('The review cap of 2 rounds is spent. This change needs a person to read it; /devloop done closes it when they have.')
+  expect(w.spawned.length).toBe(3)
+})
+test('the rules ask for it once, when the whole change is done, and it is registered deferred with no arguments', () => {
+  expect(RULES.split('\n').filter(line => line.includes('devloop_review'))).toEqual(['- When the whole change is done, call the devloop_review tool once, not after each step: a separate reviewer starts on the tree as it stands. Do not edit files until its verdict arrives: a verdict on a tree that has changed is discarded. When a round fails, fix its findings and stop: devloop re-reviews the fix by itself.'])
+  const lines = RULES.split('\n')
+  expect(lines.findIndex(line => line.includes('devloop_review'))).toBe(1 + lines.findIndex(line => line.startsWith('- You never grade or approve your own change')))
+  expect(TOOL_SPECS.find(one => one.name === 'devloop_review')).toMatchObject({ inputSchema: { type: 'object', properties: {} }, isDeferred: true })
+  expect(TOOL_SPECS.findIndex(one => one.name === 'devloop_review')).toBe(1 + TOOL_SPECS.findIndex(one => one.name === 'devloop_status'))
+})
