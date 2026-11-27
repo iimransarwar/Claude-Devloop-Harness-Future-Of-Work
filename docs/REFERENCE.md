@@ -714,6 +714,7 @@ reach the check, and the shell reads no profile or rc file.
 | Tool | What it does |
 | --- | --- |
 | `feature_check` | Runs one feature's own check and records the result; the only way a feature passes. |
+| `devloop_review` | Asks for a review round once the whole change is done. Refused when `autoReview` is off, while a spec is being written, for a subagent, at the loop limit, or when this code was already reviewed. |
 | `devloop_status` | Reads the gate, changing nothing, with each open finding to fix as its full line (deferred findings and notes counted, not listed); `detail: true` adds the cache meter and the context cost. |
 | `devloop_blocked` | Says it cannot go on and why; you are told and the turn may end. |
 | `devloop_handoff` | Records a structured handoff entry in the harness's state (never the working tree); the harness adds the facts, and the next session's first prompt is briefed from it. |
@@ -874,8 +875,8 @@ error keeps the gate shut until it is fixed.
 | --- | --- | --- |
 | `mode` | `"enforce"` (`init` writes `"observe"`) | `"observe"` records what the guards would refuse; `"enforce"` refuses it. |
 | `defaultBranch` | `"main"` | The branch changes are measured against and merged into. |
-| `verify` | `[]` | Checks, in order. Each is a command string (a `fast` check) or `{ "run": "<command>", "profile": "fast" \| "full", "when": ["<glob>", ...] }`. A single string is one check. |
-| `verifyTimeoutSec` | `300` | Time limit for each check, up to 600. |
+| `verify` | `[]` | Checks, in order. Each is a command string (a `fast` check) or `{ "run": "<command>", "profile": "fast" \| "full", "when": ["<glob>", ...] }`. A single string is one check. Add `"background": true` to a slow suite: it never runs inside a hook, starts in the background when the agent stops, has no time limit, and its result counts only for the exact code it ran on. The command line, the pre-push hook and the fallback hooks leave background checks to CI or the session and say so. |
+| `verifyTimeoutSec` | `300` | Time limit for each foreground check, up to 600. For anything longer, mark the check `"background": true`. |
 | `protected` | `devloop.json`, `REVIEW.md`, `CODEOWNERS`, `.github/CODEOWNERS`, `.claude/**`, `specs/**/features.json`, `evals/**` | Paths the agent never edits. |
 | `tests` | `**/*.test.*`, `**/*.spec.*`, `**/*_test.*`, `**/test_*.py`, `test/**`, `tests/**`, `**/__tests__/**` | Test files: locked while building. |
 | `secrets` | `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.netrc`, `**/.aws/credentials`, `**/credentials*.json` | Files never read or written. |
@@ -887,7 +888,7 @@ error keeps the gate shut until it is fixed.
 | `network.allow` | not set (tripwire off) | Hosts shell commands may reach. Exact names; `*.example.com` allows subdomains. Loopback is always allowed. A malformed list allows no host. |
 | `maxFixRounds` | `2` | Blocked stops per prompt before the turn ends and you are told. Up to 10. |
 | `maxReviewRounds` | `2` | Review rounds in one review cycle before a person must read the change: one review and one check of the fix. A cycle that passes ends, and the next review starts again at round 1. Up to 10. |
-| `autoReview` | `true` | Start a review by itself when every feature passes and verification is green, when a shipping command is refused only because no review has run, and, once a round has failed and its findings went to the agent, at the next stop that verifies the fix (in every phase, within the round cap). |
+| `autoReview` | `true` | One review per change, when it is ready: the agent calls `devloop_review`, a push or pull request finds no review of the current code (in observe mode the review starts and the push is not held), or a spec build finishes. After a failing round, the next stop that changed the code starts one re-review of the fix. Edits after a pass mark the review out of date and start nothing until the next ready moment. Rounds never start at ordinary stops. When a review cycle ends, devloop posts one summary: the result, what was fixed, what is open for you, and the tests. |
 | `budgetUsd` | `null` | A cost cap per session, against a client-side estimate. |
 | `instructionMaxLines` | `200` | `/devloop doctor` flags instruction files longer than this. |
 | `instructionMaxBytes` | `32768` | Bytes of launch-loaded instruction text (instruction files outside a `skills` folder, plus each skill's description) before doctor reports it. |

@@ -192,6 +192,16 @@ it stops, reviewed before it ships, merged by a person.
   FAIL.
 - **Ready.** You read it, merge it, and close it with `/devloop done`.
 
+**One review per change.** The agent asks for a review once, when the whole
+change is done (or a push finds none). If it fails, the fix gets one
+re-check. Reviews never run at every stop. When it ends you get one summary:
+the result, what was fixed, what needs you, and the tests.
+
+**Slow tests in the background.** Mark a long suite `"background": true` in
+`devloop.json`. It starts when the agent stops, runs with no time limit, and
+its result counts only for the exact code it ran on. Nothing waits on it
+except shipping.
+
 **Risk tiers.** A change is as risky as its riskiest file. It is `high` if
 it touches a file in `tiers.high`, a protected file or an instruction file,
 `low` if every file is in `tiers.low` and no test changed, and `medium`
