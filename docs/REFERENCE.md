@@ -39,24 +39,35 @@ Then restart Claude Code so the hooks load. The README covers installing from
 the terminal, at project scope for a team, from a local clone, and
 updating.
 
-Then, in the repository you want to work on:
+Then, in the repository you want to work on, type `/devloop` (or `/devloop
+init`, which runs the same setup) and then `/devloop doctor`.
 
-```
-/devloop init
-/devloop doctor
-```
+Setup asks a few questions, each with a recommended answer that Enter takes.
+Dismissing any of them cancels and writes nothing.
 
-`init` writes `devloop.json` (in observe mode, with the default branch it
-finds), `REVIEW.md`, `evals/README.md` and, if there is no
-`CLAUDE.md`, an `AGENTS.md`. It never overwrites a file that exists. It is
-a person's command, from the prompt; where a `devloop.json` already governs
-the session (at its root or any folder above), it writes nothing and says
-where that policy is. It looks at `package.json`, `pyproject.toml`,
-`go.mod` and `Cargo.toml` to suggest verify commands.
+| Question | Answers | What it does |
+| --- | --- | --- |
+| How strict | `Watch only (recommended)`, `Block from the start` | `"mode"`: `observe` or `enforce`. |
+| What runs your tests | the commands found, `None for now`, or your own under Other; `I'll add it later` when none are found | The `verify` list. |
+| Who approves risky merges | `Just me (recommended)`, `Two people` | `approvals` of `low 0, medium 1, high 1` for one person; the defaults (`high 2`) for two. |
+| Cache-guard (only when Python 3.8 or later is found and it is not installed) | `Yes, everything (recommended)`, `Yes, but keep normal replies`, `Not now` | `cache install --all`, `cache install --notify`, or nothing. |
+
+It then writes `devloop.json` (with the default branch it finds),
+`REVIEW.md`, `evals/README.md` and, if there is no `CLAUDE.md`, an
+`AGENTS.md`, and ends with a plain summary. It never overwrites a file that
+exists. It is a person's command, from the prompt; where a `devloop.json`
+already governs the session (at its root or any folder above), it writes
+nothing and says where that policy is. It looks at `package.json`,
+`pyproject.toml`, `go.mod` and `Cargo.toml` to suggest verify commands.
+
+Where the folder is not a git repository, setup writes nothing and names the
+git repository inside it when there is one. Otherwise it asks `Cancel
+(recommended)` or `Set up anyway`; the summary then says what devloop cannot
+see without git.
 
 Three things to know before the first change:
 
-- Read the `verify` list `init` wrote. Where it found no test command the
+- Read the `verify` list setup wrote. Where it found no test command the
   list is empty, and nothing is checked until you add one.
 - The policy is read from the default branch: commit `devloop.json` there.
 - In `observe` mode the harness records what it would refuse and refuses
@@ -673,10 +684,16 @@ every session, and deferred behind tool search.
 
 ## Commands
 
+Every action below is also a slash command of its own, `/devloop-<action>`
+(32 in all), so it shows in the `/` menu. In a repository that is not set up
+only `doctor`, `cache`, `library` and `help` appear beside `/devloop`. Typing
+any `/devloop` command opens the Dev loop panel, including in VS Code's
+narrow Claude panel, and a command that fails shows the real error.
+
 | Command | What it does |
 | --- | --- |
 | `/devloop` or `/devloop status` | Where the change stands and what the gate still needs. |
-| `/devloop init` | Set this repository up for the loop. A person's call; writes nothing where a policy already governs the session. |
+| `/devloop init` | Set this repository up for the loop: the same guided setup as `/devloop` in a repository not set up. A person's call; writes nothing where a policy already governs the session. |
 | `/devloop spec <name>` | Start or reopen a spec; only the spec and its tests change until it is approved. |
 | `/devloop approve` | Approve the spec as written and unlock the build. A person's call. |
 | `/devloop verify` | Run the fast and full verify checks now. |
