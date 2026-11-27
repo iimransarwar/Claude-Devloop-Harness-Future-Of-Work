@@ -123,6 +123,26 @@ describe('guided setup on /devloop', () => {
     expect(w.questions.length).toBe(4)
     expect('/repo/devloop.json' in w.files).toBe(true)
   })
+  test('status outside git says so instead of No changes yet', async ($, on) => {
+    const w = world(on); w.isGit = false; await start($)
+    const said = await devloop($, 'status')
+    expect(said).toMatch(/Not a git repository: devloop only sees files Claude edits here\./)
+    expect(said).not.toMatch(/No changes yet/)
+  })
+  test('Set up anyway: the summary says no push gate and promises no push review', async ($, on) => {
+    const w = world(on, null); w.isGit = false; w.setupAnswers = ['Set up anyway']; await start($)
+    const said = await devloop($, '')
+    expect(said).toMatch(/no push gate/)
+    expect(said).not.toMatch(/second agent reviews/)
+  })
+  test('a branch taken from the checked-out HEAD is marked guessed', async ($, on) => {
+    const w = world(on, null); w.defaultBranch = 'guess:feature'; await start($)
+    expect(await devloop($, '')).toMatch(/feature \(guessed/)
+  })
+  test('doctor in a repo not set up points at /devloop', async ($, on) => {
+    world(on, null); await start($)
+    expect(await devloop($, 'doctor')).toMatch(/type \/devloop to set it up/)
+  })
   test('a git repository with git subfolders sets up normally', async ($, on) => {
     const w = world(on, null); w.gitSubfolders = ['vendor/lib']; await start($)
     expect((await devloop($, '')).split('\n')[0]).toBe('devloop is set up.')

@@ -12,7 +12,7 @@ import type { Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage 
 import type { Loop, PaneTab } from '../types'
 import { cacheReport, hitRate, meterTurn } from './cache'
 import type { Miss } from './cache'
-import { briefFacts, command, keepGate, statusReport, writeHandoff } from './commands'
+import { briefFacts, command, keepGate, NOT_GIT_STATUS, statusReport, writeHandoff } from './commands'
 import { contentReason, countUnmarked, isFired, judgeContent, lowered, rulesFor } from './contentrules'
 import type { Baseline, RuleHit } from './contentrules'
 import { DEFAULTS } from './config'
@@ -1611,7 +1611,7 @@ export const register: Register = on => {
     const cfg = (await policyInForce($, at))?.cfg ?? null
     const loop = await loopOf($)
     if (cfg === null) {
-      return { result: 'This repository has not opted in to devloop (no devloop.json), so there are no features to check. A person can run /devloop init.' }
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there are no features to check. A person can set it up by typing /devloop.' }
     }
     if (loop.spec === null || loop.phase !== 'build') {
       return { result: 'No approved spec is active, so there is no feature to check. A person starts one with /devloop spec <name> and approves it with /devloop approve.' }
@@ -1665,7 +1665,7 @@ export const register: Register = on => {
     const at = await locate($)
     const inForce = await policyInForce($, at)
     if (inForce === null) {
-      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is no gate. A person can run /devloop init.' }
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is no gate. A person can set it up by typing /devloop.' }
     }
     // The evidence is proven here too, and nothing is written.
     const { loop, snap } = await refresh($, at, inForce.cfg, false)
@@ -1968,7 +1968,7 @@ export const register: Register = on => {
     const at = await locate($)
     const cfg = (await policyInForce($, at))?.cfg ?? null
     if (cfg === null) {
-      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is nowhere to keep a handoff. A person can run /devloop init.' }
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is nowhere to keep a handoff. A person can set it up by typing /devloop.' }
     }
     const { input, problems } = readHandoff(e as unknown as Record<string, unknown>)
     if (input.objective === '' || input.nextStep === '') {
@@ -2057,7 +2057,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>This repository is not set up for the loop.</Text>
-          <Text dimColor>Run /devloop init to start.</Text>
+          <Text dimColor>Type /devloop to set it up.</Text>
         </Box>
       )
     }
@@ -2122,7 +2122,7 @@ export const register: Register = on => {
     } else {
       body = [
         tier !== 'none' && <Text bold>{isShippable(loop, cfg, facts) ? 'Gate: green' : 'Gate: not green'}</Text>,
-        tier === 'none' && <Text dimColor>No changes yet: nothing to gate.</Text>,
+        tier === 'none' && <Text dimColor>{loop.tree === null ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
         ...(tier === 'none' ? [] : checks.map(check => (
           <Text color={check.isMet ? undefined : 'warning'} wrap="truncate-end">
             {check.isMet ? '[x]' : '[ ]'} {check.label}: {check.note}

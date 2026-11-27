@@ -63,7 +63,7 @@ const PURPOSE: Record<string, string> = {
   'evals/README.md': 'where regression tasks go',
 }
 
-export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonly string[], branch: { name: string; isGuessed: boolean }): string => {
+export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonly string[], branch: { name: string; isGuessed: boolean }, options: { isOutsideGit?: boolean } = {}): string => {
   const mode =
     a.mode === 'observe'
       ? 'Watch only: it notes what it would have blocked, and blocks nothing (it always blocks reading secret files).'
@@ -79,11 +79,12 @@ export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonl
     : `Changes are measured against ${branch.name}.`
   return [
     SET_UP_HEADLINE,
+    ...(options.isOutsideGit === true ? [OUTSIDE_GIT_LINE] : []),
     '',
     'What it will do here',
     `  - ${mode}`,
     `  - ${checks}`,
-    '  - Before anything is pushed, a second agent reviews the change.',
+    ...(options.isOutsideGit === true ? [] : ['  - Before anything is pushed, a second agent reviews the change.']),
     `  - ${approvers}`,
     '',
     'Files it added',
@@ -141,7 +142,7 @@ remote=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null) && { 
 for b in main master trunk develop; do
   git rev-parse -q --verify "refs/heads/$b" >/dev/null 2>&1 && { echo "$b"; exit 0; }
 done
-git symbolic-ref --short -q HEAD 2>/dev/null
+head=$(git symbolic-ref --short -q HEAD 2>/dev/null) && echo "guess:$head"
 `
 
 /**
@@ -150,9 +151,12 @@ git symbolic-ref --short -q HEAD 2>/dev/null
  */
 export async function detectBranch($: Engine, root: string): Promise<{ name: string; isGuessed: boolean }> {
   const ran = await $.process.run(['bash', '-c', DEFAULT_BRANCH, 'devloop'], { cwd: root, timeoutMs: 10_000 }).catch(() => null)
-  const name = (ran?.stdout ?? '').split('\n')[0]?.trim() ?? ''
+  const line = (ran?.stdout ?? '').split('\n')[0]?.trim() ?? ''
+  // The last resort, the checked-out branch, is a guess: the script marks it.
+  const isGuessed = line.startsWith('guess:')
+  const name = isGuessed ? line.slice('guess:'.length) : line
 
-  return /^[\w./-]+$/.test(name) ? { name, isGuessed: false } : { name: 'main', isGuessed: true }
+  return /^[\w./-]+$/.test(name) ? { name, isGuessed } : { name: 'main', isGuessed: true }
 }
 
 /**
@@ -310,8 +314,6 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
     const { snap, policy } = baseline
     await save($, at.root, before => ({ ...withSnapshot(before, snap, policy.cfg), verify: { ...before.verify, status: 'none', tree: snap.tree, profile: 'none' } }))
   }
-  const said = summary({ mode, verify, isVerifyLater: isLater, approvers }, wrote, kept, branch)
-
   // Outside git the person chose this: the summary says, under its first line, what devloop cannot see.
-  return { text: git.isGit ? said : said.replace(SET_UP_HEADLINE, `${SET_UP_HEADLINE}\n${OUTSIDE_GIT_LINE}`) }
+  return { text: summary({ mode, verify, isVerifyLater: isLater, approvers }, wrote, kept, branch, { isOutsideGit: !git.isGit }) }
 }

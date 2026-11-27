@@ -132,6 +132,9 @@ const HELP = `/devloop                 where the change stands and what the gate
 
 type Answer = CommandRunResult
 
+/** What the status and the pane say outside git, where the snapshot names no tree. */
+export const NOT_GIT_STATUS = 'Not a git repository: devloop only sees files Claude edits here.'
+
 const NOT_SET_UP = 'devloop is not set up in this repository. A person sets it up by typing /devloop.'
 
 /** A verify check as a person reads it. */
@@ -151,7 +154,7 @@ export function statusReport(loop: Loop, cfg: Config, at: Place, snap: Snapshot,
   const size = snap.tree === null ? '' : ` (${snap.size.files} in the diff, ${snap.size.lines} lines)`
   const lines = [
     `devloop (${cfg.mode}): ${brief({ ...loop, tier })}`,
-    tier === 'none' ? 'No changes yet.' : `Changed: ${loop.changed.length} file${loop.changed.length === 1 ? '' : 's'}${snap.branch !== null ? ` on ${snap.branch}` : ''}${size}`,
+    tier === 'none' ? (snap.tree === null ? NOT_GIT_STATUS : 'No changes yet.') : `Changed: ${loop.changed.length} file${loop.changed.length === 1 ? '' : 's'}${snap.branch !== null ? ` on ${snap.branch}` : ''}${size}`,
     ...rows,
     tier === 'none' ? '' : `  Merge: ${approvers(tier, cfg)}.`,
     ready.length > 0 ? `Ready to build (dependencies pass on this tree): ${ready.join(', ')}` : '',
@@ -636,7 +639,7 @@ async function doctor($: Engine, at: Place, isStrict = false): Promise<Answer> {
 
     return { text: ['devloop doctor', ...out].join('\n') }
   }
-  say(cfg !== null, cfg !== null ? `devloop.json found at ${at.root} (mode: ${cfg.mode})` : 'no devloop.json: run /devloop init')
+  say(cfg !== null, cfg !== null ? `devloop.json found at ${at.root} (mode: ${cfg.mode})` : 'no devloop.json: type /devloop to set it up')
   if (cfg === null) {
     return { text: ['devloop doctor', ...out].join('\n') }
   }

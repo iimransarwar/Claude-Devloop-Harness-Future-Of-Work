@@ -585,11 +585,11 @@ test('the status tool reads the gate for the builder and changes nothing', async
   expect(await devloop($, 'status')).toBe(before)
 })
 
-test('C6: with no changes, the status says there is nothing to verify', async ($, on) => {
+test('C6: with no changes, the status says there are no changes yet', async ($, on) => {
   world(on)
   await start($)
   const status = await devloop($, 'status')
-  expect(status).toMatch(/Verification: nothing to verify/)
+  expect(status).toMatch(/Verification: no changes yet/)
   expect(status).not.toMatch(/not run since the last edit/)
 })
 
