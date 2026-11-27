@@ -24,12 +24,18 @@ writes of secret files and offers `/devloop init`.
 
 ## Install
 
+Run each line on its own at the Claude Code prompt (a slash command takes a
+single line):
+
 ```
 /plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work
+```
+
+```
 /plugin install devloop@devloop
 ```
 
-Restart Claude Code so the hooks load. The README covers installing from
+Then restart Claude Code so the hooks load. The README covers installing from
 the terminal, at project scope for a team, from a local clone, and
 updating.
 

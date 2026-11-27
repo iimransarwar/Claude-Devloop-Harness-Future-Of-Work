@@ -54,14 +54,22 @@ plugin, also named `devloop`. Add the marketplace, then install the plugin.
 
 ### From inside Claude Code
 
-Run these at the Claude Code prompt:
+Run these at the Claude Code prompt **one at a time**. A slash command takes
+a single line, so pasting both together fails.
 
-```
-/plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work
-/plugin install devloop@devloop
-```
+1. Add the marketplace:
 
-Restart Claude Code so the hooks load.
+   ```
+   /plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work
+   ```
+
+2. When that finishes, install the plugin:
+
+   ```
+   /plugin install devloop@devloop
+   ```
+
+3. Restart Claude Code so the hooks load.
 
 ### From the terminal
 
