@@ -891,7 +891,7 @@ EOF
   git init -q --bare "$work/sparse-remote.git"
   mkdir -p "$sp" && cd "$sp" || exit 1
   git init -q -b main . && git config commit.gpgsign false && git remote add origin "$work/sparse-remote.git"
-  printf '%s\n' '{ "mode": "enforce", "verify": ["true"], "tiers": { "low": ["docs/**", "big/**"] } }' >devloop.json
+  printf '%s\n' '{ "mode": "enforce", "verify": ["true"], "grounding": { "mode": "enforce" }, "tiers": { "low": ["docs/**", "big/**"] } }' >devloop.json
   mkdir -p docs big/one big/two && printf 'one\n' >docs/a.md && printf 'x\n' >big/one/x.md && printf 'y\n' >big/two/y.md
   git add -A && git commit -q -m base && git push -q origin main 2>/dev/null
   git checkout -q -b feature && printf 'two\n' >>docs/a.md && git commit -q -am low
