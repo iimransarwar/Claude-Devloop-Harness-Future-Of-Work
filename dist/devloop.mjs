@@ -5377,7 +5377,7 @@ var NUDGE = "This is a question about the state of things: check the source befo
 var REFUSAL = "You were asked a question about the state of things and answered without looking at anything in this turn. Check the source now (read the files, run the query, list the components), then answer and say what you checked. If nothing can be checked (an opinion, a general explanation), say that in one line and stop again.";
 var UNCHECKED = "This answer was given without checking anything";
 function groundingMode(cfg) {
-  return cfg.grounding.mode ?? cfg.mode;
+  return cfg.grounding.mode ?? (cfg.mode === "enforce" ? "observe" : cfg.mode);
 }
 var OPENERS = ["does", "do", "did", "is", "are", "was", "were", "has", "have", "had", "can", "could", "will", "would", "should", "what", "which", "who", "whose", "where", "when", "why", "how"];
 var CHECKING = ["confirm", "verify", "double check", "double-check", "make sure", "are you sure", "is it true", "check whether", "check if", "did you", "have you"];
