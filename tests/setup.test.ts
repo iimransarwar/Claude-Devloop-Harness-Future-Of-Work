@@ -166,4 +166,52 @@ describe('guided setup on /devloop', () => {
     expect(await devloop($, '', { kind: 'sdk' })).toBe('devloop is not set up in this repository. A person sets it up by typing /devloop.')
     expect(w.questions.length).toBe(0)
   })
+  // Setup's fourth question: cache-guard.
+  test('Enter through setup with Python installs cache-guard with --all', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; await start($)
+    const said = await devloop($, '')
+    expect(w.questions.length).toBe(4)
+    expect(w.cacheInstalls).toEqual([['install', '--all']])
+    expect(said).toMatch(/cache-guard: installed \(everything\)\. Restart Claude Code/)
+  })
+  test('keep normal replies installs with --notify', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; w.setupAnswers = ['Watch only (recommended)', 'None for now', 'Just me (recommended)', 'Yes, but keep normal replies']; await start($)
+    await devloop($, '')
+    expect(w.cacheInstalls).toEqual([['install', '--notify']])
+  })
+  test('Not now installs nothing and says how to add it later', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; w.setupAnswers = ['Watch only (recommended)', 'None for now', 'Just me (recommended)', 'Not now']; await start($)
+    expect(await devloop($, '')).toMatch(/cache-guard: not installed\. \/devloop cache install adds it later\./)
+    expect(w.cacheInstalls).toEqual([])
+  })
+  test('no Python: three questions, skipped line', async ($, on) => {
+    const w = world(on, null); await start($)
+    expect(await devloop($, '')).toMatch(/cache-guard: skipped, it needs Python 3\.8 or later\./)
+    expect(w.questions.length).toBe(3)
+  })
+  test('already installed: three questions, already line', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'
+    w.files['/home/u/.claude/settings.json'] = JSON.stringify({ statusLine: { command: 'python3 /x/cache_guard.py statusline' } })
+    await start($)
+    expect(await devloop($, '')).toMatch(/cache-guard: already installed\./)
+    expect(w.questions.length).toBe(3)
+  })
+  test('a failing install still sets devloop up and says so', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; w.cacheInstallExit = 1; await start($)
+    const said = await devloop($, '')
+    expect(said.split('\n')[0]).toBe('devloop is set up.')
+    expect(said).toMatch(/cache-guard: could not be installed \(.*\)\. \/devloop cache install tries again\./)
+    expect('/repo/devloop.json' in w.files).toBe(true)
+  })
+  test('dismissing the cache question writes nothing and installs nothing', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; w.setupAnswers = ['Watch only (recommended)', 'None for now', 'Just me (recommended)', '<dismiss>']; await start($)
+    expect(await devloop($, '')).toBe('Setup cancelled. Nothing was written.')
+    expect(w.cacheInstalls).toEqual([])
+    expect('/repo/devloop.json' in w.files).toBe(false)
+  })
+  test('/devloop cache install still asks its own confirmation', async ($, on) => {
+    const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Leave it'; await start($)
+    expect(await devloop($, 'cache install --all')).toBe('Nothing was changed.')
+    expect(w.cacheInstalls).toEqual([])
+  })
 })

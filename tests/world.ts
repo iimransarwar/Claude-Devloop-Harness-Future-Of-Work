@@ -2,6 +2,8 @@ import { expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { PYTHON_VERSION, SCRIPT } from '../hooks/cacheguard'
+
 // Nothing sits beneath the plugin in a test, so this stands in for the
 // engine and the machine: a repository held in memory, and a shell whose
 // answers the test decides. The harness's own git scripts carry a
@@ -130,6 +132,11 @@ export type World = {
    * item `'<dismiss>'` dismisses that question.
    */
   setupAnswers: string[] | null
+  /** The session's Python version; null answers nothing, so setup skips its cache-guard question. */
+  pythonVersion: string | null
+  /** Each cache-guard installer run's argv after the script path, and its exit code. */
+  cacheInstalls: string[][]
+  cacheInstallExit: number
   /** Whether the session's folder is a git work tree: false, the snapshot answers nothing and the git probe lists `gitSubfolders`. */
   isGit: boolean
   /** The snapshot script fails (exit 1, nothing printed) in a git repository: a null tree that is not "outside git". */
@@ -157,7 +164,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
     toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
     scriptArgs: {}, ignored: {}, capped: null, hold: null, onHeld: null, unreadable: [], toolErrors: [], hookEnv: {}, diffs: {}, committable: null, headTree: null, hidden: [], differs: [], argvs: [], isDiskListed: false,
-    setupAnswers: null, isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null,
+    setupAnswers: null, pythonVersion: null, cacheInstalls: [], cacheInstallExit: 0, isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null,
   }
   on('store.get', (_, e) => ({ value: w.store[e.key] }))
   on('store.set', (_, e) => {
@@ -403,6 +410,17 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
 
           return answer(out ?? '', code)
         }
+      }
+    }
+    if (w.pythonVersion !== null && e.argv[0] === 'python3') {
+      if (e.argv[1] === '-c' && e.argv[2] === PYTHON_VERSION) {
+        return answer(`${w.pythonVersion}\n`)
+      }
+      if ((e.argv[1] ?? '').endsWith(`/${SCRIPT}`) && e.argv[2] === 'install') {
+        w.argvs.push([...e.argv])
+        w.cacheInstalls.push(e.argv.slice(2))
+
+        return answer(w.cacheInstallExit === 0 ? 'cache-guard installed' : 'installer failed: no write access', w.cacheInstallExit)
       }
     }
     w.ran.push(command)

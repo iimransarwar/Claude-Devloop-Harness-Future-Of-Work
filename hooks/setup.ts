@@ -4,6 +4,7 @@
 
 import type { CommandRunInput, CommandRunResult } from 'claude-code'
 
+import { cacheGuardState, installCacheGuard } from './cachecmd'
 import { isFromPerson } from './journal'
 import { forget, locate, save, snapshotInForce, withSnapshot } from './state'
 import type { Engine } from './state'
@@ -22,6 +23,7 @@ export const OPTIONS = {
   none: 'None for now',
   later: "I'll add it later",
   approvers: ['Just me (recommended)', 'Two people'],
+  cache: ['Yes, everything (recommended)', 'Yes, but keep normal replies', 'Not now'],
   outsideGit: ['Cancel (recommended)', 'Set up anyway'],
 } as const
 
@@ -38,6 +40,14 @@ export const readApprovers = (answer: string): Approvers | null => {
   const a = norm(answer)
   if (['me', 'just me', 'just me (recommended)', '1', 'one'].includes(a)) return 'me'
   if (['two', 'two people', '2'].includes(a)) return 'two'
+  return null
+}
+
+export const readCache = (answer: string): '--all' | '--notify' | 'none' | null => {
+  const a = norm(answer)
+  if (a === norm(OPTIONS.cache[0]) || ['everything', 'all', 'yes'].includes(a)) return '--all'
+  if (a === norm(OPTIONS.cache[1]) || ['normal', 'notify'].includes(a)) return '--notify'
+  if (a === norm(OPTIONS.cache[2]) || ['no', 'not now', 'skip', 'none'].includes(a)) return 'none'
   return null
 }
 
@@ -63,7 +73,7 @@ const PURPOSE: Record<string, string> = {
   'evals/README.md': 'where regression tasks go',
 }
 
-export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonly string[], branch: { name: string; isGuessed: boolean }, options: { isOutsideGit?: boolean } = {}): string => {
+export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonly string[], branch: { name: string; isGuessed: boolean }, options: { isOutsideGit?: boolean; cacheLine?: string } = {}): string => {
   const mode =
     a.mode === 'observe'
       ? 'Watch only: it notes what it would have blocked, and blocks nothing (it always blocks reading secret files).'
@@ -93,6 +103,7 @@ export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonl
     '',
     base,
     'Change these later in devloop.json: "mode", "verify", "approvals".',
+    ...(options.cacheLine === undefined ? [] : [options.cacheLine]),
     'Next: /devloop-doctor checks the setup.',
   ].join('\n')
 }
@@ -193,6 +204,7 @@ const INTRO =
 const STRICT_QUESTION = 'Watch only notes what devloop would have blocked and blocks nothing; Block from the start refuses what its rules forbid. How strict should it be to start?'
 const APPROVERS_QUESTION = 'A risky change needs a person to approve it before it merges; with Two people, someone working alone can never clear one. Who approves risky merges?'
 const OUTSIDE_GIT_QUESTION = `${NOT_GIT} It would only see files Claude edits: no diffs, no credential scan, no push gate. Set it up anyway?`
+const CACHE_QUESTION = 'cache-guard (bundled, needs Python) shows a status line with how warm your prompt cache is and warns before a cold cache costs you. Everything adds its status line, trimming of long command output, notices and a lean output style; normal replies keeps your replies as they are. Install it?'
 const JUST_ME = { low: 0, medium: 1, high: 1 }
 
 /** A detected check in full, as a person reads it: its profile and the globs that scope it. */
@@ -282,6 +294,12 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
   if (approvers === null) {
     return { text: CANCELLED }
   }
+  // Asked before anything is written, so a dismissal still writes nothing; the install itself comes after.
+  const guardState = await cacheGuardState($)
+  const cache = guardState === 'available' ? await askRead($, CACHE_QUESTION, OPTIONS.cache, readCache) : null
+  if (guardState === 'available' && cache === null) {
+    return { text: CANCELLED }
+  }
   const branch = await detectBranch($, root)
   const files: [string, string][] = [
     ['devloop.json', configFile(verify, branch.name, { mode, ...(approvers === 'me' ? { approvals: JUST_ME } : {}) })],
@@ -314,6 +332,21 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
     const { snap, policy } = baseline
     await save($, at.root, before => ({ ...withSnapshot(before, snap, policy.cfg), verify: { ...before.verify, status: 'none', tree: snap.tree, profile: 'none' } }))
   }
+  let cacheLine: string
+  if (guardState === 'installed') {
+    cacheLine = 'cache-guard: already installed.'
+  } else if (guardState === 'no-python') {
+    cacheLine = 'cache-guard: skipped, it needs Python 3.8 or later.'
+  } else if (cache === 'none' || cache === null) {
+    cacheLine = 'cache-guard: not installed. /devloop cache install adds it later.'
+  } else {
+    // The answer is the person's confirmation; a failed install never fails setup.
+    const done = await installCacheGuard($, at, [cache], e).catch((): { isOk: boolean; text: string } => ({ isOk: false, text: 'exit none):\ncache-guard could not be started.' }))
+    const reason = (done.text.split('\n').slice(done.isOk ? 0 : 1).find(line => line.trim() !== '') ?? 'no output').trim().replace(/\.$/, '').slice(0, 160)
+    cacheLine = done.isOk
+      ? `cache-guard: installed (${cache === '--all' ? 'everything' : 'normal replies'}). Restart Claude Code to see its status line.`
+      : `cache-guard: could not be installed (${reason}). /devloop cache install tries again.`
+  }
   // Outside git the person chose this: the summary says, under its first line, what devloop cannot see.
-  return { text: summary({ mode, verify, isVerifyLater: isLater, approvers }, wrote, kept, branch, { isOutsideGit: !git.isGit }) }
+  return { text: summary({ mode, verify, isVerifyLater: isLater, approvers }, wrote, kept, branch, { isOutsideGit: !git.isGit, cacheLine }) }
 }
