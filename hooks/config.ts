@@ -56,6 +56,8 @@ export type Config = {
   maxFixRounds: number
   maxReviewRounds: number
   autoReview: boolean
+  /** A finished small fix (its checks passed at a stop) gets its first review without anyone asking. */
+  reviewOnFinish: boolean
   budgetUsd: number | null
   instructionMaxLines: number
   defaultBranch: string
@@ -211,6 +213,7 @@ export const DEFAULTS: Config = {
   maxFixRounds: 2,
   maxReviewRounds: 2,
   autoReview: true,
+  reviewOnFinish: true,
   budgetUsd: null,
   instructionMaxLines: 200,
   defaultBranch: 'main',
@@ -1021,6 +1024,7 @@ export function parseConfig(text: string): Parsed {
     maxFixRounds: whole(raw, 'maxFixRounds', DEFAULTS.maxFixRounds, 10, errors),
     maxReviewRounds: whole(raw, 'maxReviewRounds', DEFAULTS.maxReviewRounds, 10, errors),
     autoReview,
+    reviewOnFinish: typeof raw.reviewOnFinish === 'boolean' ? raw.reviewOnFinish : (raw.reviewOnFinish !== undefined && errors.push('reviewOnFinish: expected true or false; using true'), DEFAULTS.reviewOnFinish),
     budgetUsd,
     instructionMaxLines: whole(raw, 'instructionMaxLines', DEFAULTS.instructionMaxLines, 10_000, errors),
     defaultBranch,

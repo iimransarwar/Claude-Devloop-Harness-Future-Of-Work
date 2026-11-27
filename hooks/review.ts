@@ -14,7 +14,7 @@ import {
 import type { Answer, Parsed } from './findings'
 import { cycleSummary } from './findings'
 import { testLines } from './testruns'
-import { capText, featureCounts, isCapSpent, isStallSpent, NOTHING_TEXT, reviewRefusal, specialistsFor, STALLED_TEXT, tierFor } from './gate'
+import { atLeast, capText, featureCounts, isCapSpent, isStallSpent, NOTHING_TEXT, reviewRefusal, specialistsFor, STALLED_TEXT, tierFor } from './gate'
 import { FRESH } from './fresh'
 import { isSecret, relative } from './rules'
 import { bump, coverageNow, git, judgeFeatureCheck, note, policyInForce, readFeatures, record, save, snapshot, snapshotInForce, loopOf, specHash, writeReviewDiff } from './state'
@@ -599,7 +599,9 @@ export async function maybeReview($: Engine, at: Place, cfg: Config, loop: Loop)
   const { passing, total, onTree } = featureCounts(loop)
   const isBuilt = loop.phase === 'build' && total > 0 && passing === total && onTree === total && loop.review.status === 'none' && loop.review.cycle.ended !== 'pass'
   const isFix = loop.review.isLooping && loop.review.status !== 'pass' && loop.tree !== null && loop.tree !== loop.review.tree
-  if (!isBuilt && !isFix) {
+  // A small fix the agent finished (this stop's checks passed, or none are set) gets its first review without anyone asking; later rounds follow rules 14-15.
+  const isFinished = cfg.reviewOnFinish && loop.phase === 'idle' && loop.tree !== null && atLeast(tierFor(loop, cfg), 'medium') && loop.review.round === 0 && loop.review.status === 'none'
+  if (!isBuilt && !isFix && !isFinished) {
     return
   }
   if (reviewRefusal(loop, cfg, await isReviewedHere($, at, cfg, loop)) === null) {

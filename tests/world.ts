@@ -168,7 +168,7 @@ export type World = {
 export type Spawn = { command: string; argv: string[]; cwd: string | undefined; finish: (exitCode: number, output?: string) => void; isKilled: boolean }
 
 // The full review by default (fast critic off), so tests of reviewers, specialists and models see every seat; the fast critic has its own tests.
-export const CONFIG = { verify: ['npm test'], mode: 'enforce', fastReview: { maxFiles: 0, maxLines: 0, model: null } }
+export const CONFIG = { verify: ['npm test'], mode: 'enforce', fastReview: { maxFiles: 0, maxLines: 0, model: null }, reviewOnFinish: false }
 
 /**
  * `isClockMocked`: the test answers `$.clock` itself with the kit's

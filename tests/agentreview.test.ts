@@ -291,3 +291,11 @@ test('the rules ask for it once, when the whole change is done, and it is regist
   expect(TOOL_SPECS.find(one => one.name === 'devloop_review')).toMatchObject({ inputSchema: { type: 'object', properties: {} }, isDeferred: true })
   expect(TOOL_SPECS.findIndex(one => one.name === 'devloop_review')).toBe(1 + TOOL_SPECS.findIndex(one => one.name === 'devloop_status'))
 })
+
+test('reviewOnFinish: a finished small fix gets its first review by itself, and only its first', async ($, on) => {
+  const w = world(on, { ...CONFIG, reviewOnFinish: true }); await start($)
+  await fix($, w)
+  expect(w.spawned.length).toBe(1)
+  await fix($, w, 'src/b.ts')
+  expect(w.spawned.length).toBe(1)
+})
