@@ -1,6 +1,8 @@
 // What a check printed, made useful: the part the model reads, and a
 // fingerprint that stays the same when only noise changed. Pure: no `$`.
 
+import type { Outcome } from '../types'
+
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g
 
 const stripAnsi = (text: string): string => text.replace(ANSI, '')
@@ -85,12 +87,8 @@ export const digest = (text: string): string => hash(text)
 export const fingerprint = (command: string, output: string): string =>
   hash(`${command}\n${normalizeOutput(output)}`)
 
-/**
- * How a check ended. `not-found`, `timeout` and `killed` are infrastructure
- * outcomes: the check could not run, so no code change fixes it and no fix
- * round is spent on it.
- */
-export type Outcome = 'pass' | 'fail' | 'not-found' | 'timeout' | 'killed'
+// How a check ended is part of the loop's record, so the contract defines it.
+export type { Outcome }
 
 /**
  * Classifies a finished check by its exit code alone (as `bash -c` reports
@@ -124,7 +122,7 @@ export function infraAdvice(command: string, outcome: Outcome, timeoutSec: numbe
     case 'not-found':
       return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`
     case 'timeout':
-      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json or make the check faster; no code change to the work fixes this.`
+      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.`
     case 'killed':
       return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`
     default:

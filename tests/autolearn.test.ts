@@ -180,7 +180,7 @@ describe('learn runs by itself (decision 2)', () => {
     await turn($, {})
     expect(learners(w)).toEqual([])
     w.cost = 0.5
-    w.store['loop:/repo'] = { shape: 'loop-12', value: { ...loopIn(w), review: { ...loopIn(w).review, status: 'running', round: 1, at: 1000 } } }
+    w.store['loop:/repo'] = { shape: 'loop-13', value: { ...loopIn(w), review: { ...loopIn(w).review, status: 'running', round: 1, at: 1000 } } }
     await start($)
     await prompt($)
     await turn($, {})
@@ -193,7 +193,7 @@ describe('learn runs by itself (decision 2)', () => {
     await start($)
     expect(loopIn(w).phase).toBe('idle')
     expect(loopIn(w).learner).toEqual({ agentId: null, at: 0, groups: [], runs: 0 })
-    expect((w.store['loop:/repo'] as { shape: string }).shape).toBe('loop-12')
+    expect((w.store['loop:/repo'] as { shape: string }).shape).toBe('loop-13')
     expect(learnedOf({ shape: 'learning-0', rules: [] })).toEqual(EMPTY_LEARNED)
     expect(learnedOf(undefined)).toEqual(EMPTY_LEARNED)
   })

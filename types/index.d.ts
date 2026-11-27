@@ -152,6 +152,33 @@ export type Approval = {
   checklist?: { kept: string[]; person: string[]; struck: string[] }
 }
 
+/**
+ * How a check ended. `not-found`, `timeout` and `killed` are infrastructure
+ * outcomes: the check could not run, so no code change fixes it and no fix
+ * round is spent on it.
+ */
+export type Outcome = 'pass' | 'fail' | 'not-found' | 'timeout' | 'killed'
+
+/**
+ * One verify check's latest run, as the loop keeps it (a different thing from
+ * the command line's `CheckRun`): the tree it ran on, how it ended, when and
+ * for how long. `lines` is at most the first 10 lines of the distilled output
+ * (`''` on a pass); `saved` is where the whole output was kept. A run whose
+ * tree changed while it ran is `isOlderTree`: it never counts for the tree now.
+ */
+export type CheckRecord = {
+  tree: string | null
+  outcome: Outcome
+  at: number
+  durationMs: number
+  lines: string
+  isOlderTree: boolean
+  saved: string | null
+}
+
+/** A background check's run going now: the tree it started on, and when. */
+export type BackgroundRun = { tree: string | null; startedAt: number }
+
 /** Everything the loop knows about the change in progress, per repository. */
 export type Loop = {
   /** The repository this loop belongs to; a session that moves to another root loads that root's loop. */
@@ -219,7 +246,15 @@ export type Loop = {
     blockedTree: string | null
     /** How the last failing check ended when it could not run at all (not found, timed out, killed); null for a real failure. */
     infra: string | null
+    /**
+     * Each check's latest run, by command, foreground and background alike.
+     * A background check that could not run on a tree (not found, killed)
+     * says so here by its `outcome`, and is not started again on that tree.
+     */
+    runs: Record<string, CheckRecord>
   }
+  /** Background checks running now, by command: the tree each started on, and when. */
+  background: Record<string, BackgroundRun>
   review: {
     status: 'none' | 'running' | 'pass' | 'fail'
     round: number

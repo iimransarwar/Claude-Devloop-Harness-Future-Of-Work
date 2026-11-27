@@ -223,7 +223,7 @@ describe('D1 F4: a push goes only when the committable tree is HEAD\'s tree', ()
     w.ignored = { 'CLAUDE.md': 'blob1' }
     w.committable = 'h0'
     w.headTree = 'h0'
-    w.store['loop:/repo'] = { shape: 'loop-12', value: { ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't-with-ignored-claude-md', ignoredBase: { 'CLAUDE.md': 'blob1' } } }
+    w.store['loop:/repo'] = { shape: 'loop-13', value: { ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't-with-ignored-claude-md', ignoredBase: { 'CLAUDE.md': 'blob1' } } }
     await start($)
     expect((await bash($, 'git push -u origin feature')).deny).toBeUndefined()
     expect((await bash($, 'git push -u origin HEAD')).deny).toBeUndefined()
@@ -238,7 +238,7 @@ describe('D1 F10: evidence notes are keyed on the committable tree, the full tre
     w.ignored = { 'CLAUDE.md': 'blob1' }
     w.committable = 'c1'
     w.store['loop:/repo'] = {
-      shape: 'loop-12',
+      shape: 'loop-13',
       value: {
         ...FRESH, root: '/repo', sessionId: 'earlier', tree: 'full1', changed: ['src/a.ts'], tier: 'medium', size: { files: 1, lines: 3 }, ignoredBase: { 'CLAUDE.md': 'blob1' },
         verify: { ...FRESH.verify, status: 'pass', tree: 'full1', profile: 'full', passedOn: { 'npm test': 'full1' } },
@@ -276,7 +276,7 @@ describe('D1 F7: evidence under another policy does not count; a row needs the r
     const w = world(on)
     w.changed = ['src/a.ts']
     w.store['loop:/repo'] = {
-      shape: 'loop-12',
+      shape: 'loop-13',
       value: {
         ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't0', changed: ['src/a.ts'], tier: 'medium', size: { files: 1, lines: 3 },
         verify: { ...FRESH.verify, status: 'pass', tree: 't0', profile: 'full', passedOn: { 'npm test': 't0' } },

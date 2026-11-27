@@ -44,7 +44,7 @@ export { FRESH } from './fresh'
 
 // Change the tag when Loop's fields change: it declines what an earlier
 // version stored, which outlives a reload.
-const SHAPE = 'loop-12'
+const SHAPE = 'loop-13'
 const LOOP = atom({ plugin: 'devloop', key: 'loop' } as const, FRESH, { shape: SHAPE })
 const MODE = atom({ plugin: 'devloop', key: 'mode' } as const, 'off' as Mode)
 /** The pane's tab: written from a tab button's handler, never while drawing. */

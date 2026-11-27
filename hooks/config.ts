@@ -10,6 +10,12 @@ export type Step = {
   profile: Profile
   /** Globs: the check runs only when a changed file matches one; null runs it always. */
   when: string[] | null
+  /**
+   * A background check: in neither profile, it runs after the agent's stops
+   * with no time limit, and only shipping waits for its pass. The key is
+   * present only on a background check.
+   */
+  background?: true
 }
 
 /** A specialist reviewer: started beside the general one when a changed file matches `when`. */
@@ -329,14 +335,18 @@ const unknownKeys = (raw: Raw, known: readonly string[], at: string): string[] =
     .filter(key => !known.includes(key))
     .map(key => `${at}${key}: unknown field`)
 
-/** A whole number in range; anything else is reported and takes the fallback. */
-function whole(raw: Raw, key: string, fallback: number, max: number, errors: string[]): number {
+/**
+ * A whole number in range; anything else is reported and takes the fallback.
+ * `overMax`, when given, is said after the error for a number above `max`.
+ */
+function whole(raw: Raw, key: string, fallback: number, max: number, errors: string[], overMax?: string): number {
   const v = raw[key]
   if (v === undefined) {
     return fallback
   }
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > max) {
-    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}`)
+    const why = overMax !== undefined && typeof v === 'number' && Number.isFinite(v) && v > max ? `. ${overMax}` : ''
+    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}${why}`)
 
     return fallback
   }
@@ -372,7 +382,7 @@ function step(v: unknown, at: string, errors: string[]): Step | null {
 
     return null
   }
-  errors.push(...unknownKeys(v, ['run', 'profile', 'when'], `${at}.`))
+  errors.push(...unknownKeys(v, ['run', 'profile', 'when', 'background'], `${at}.`))
   let profile: Profile = 'fast'
   if (v.profile === 'full') {
     profile = 'full'
@@ -384,6 +394,12 @@ function step(v: unknown, at: string, errors: string[]): Step | null {
     when = v.when
   } else if (v.when !== undefined) {
     errors.push(`${at}.when: expected a non-empty list of globs; the check runs on every change`)
+  }
+  if (v.background === true) {
+    return { run: v.run, profile, when, background: true }
+  }
+  if (v.background !== undefined && v.background !== false) {
+    errors.push(`${at}.background: expected true or false; it runs in the foreground`)
   }
 
   return { run: v.run, profile, when }
@@ -960,7 +976,7 @@ export function parseConfig(text: string): Parsed {
 
   const cfg: Config = {
     verify,
-    verifyTimeoutSec: whole(raw, 'verifyTimeoutSec', DEFAULTS.verifyTimeoutSec, 600, errors),
+    verifyTimeoutSec: whole(raw, 'verifyTimeoutSec', DEFAULTS.verifyTimeoutSec, 600, errors, 'Mark long checks "background": true in verify: they run with no time limit, and only shipping waits for them'),
     protected: strings(raw, 'protected', DEFAULTS.protected, errors),
     tests: strings(raw, 'tests', DEFAULTS.tests, errors),
     secrets: strings(raw, 'secrets', DEFAULTS.secrets, errors),

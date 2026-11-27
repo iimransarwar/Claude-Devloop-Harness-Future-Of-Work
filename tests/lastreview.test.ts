@@ -152,7 +152,7 @@ describe('F7: a round with a promoted checklist failure writes evidence that say
     const w = world(on)
     w.changed = ['src/a.ts']
     w.store['loop:/repo'] = {
-      shape: 'loop-12',
+      shape: 'loop-13',
       value: {
         ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't0', changed: ['src/a.ts'], tier: 'medium', size: { files: 1, lines: 3 },
         verify: { ...FRESH.verify, status: 'pass', tree: 't0', profile: 'full', passedOn: { 'npm test': 't0' } },

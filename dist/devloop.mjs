@@ -154,13 +154,14 @@ var CHECK_ENV_BASE = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG"
 var isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var isStrings = (v) => Array.isArray(v) && v.every((one) => typeof one === "string");
 var unknownKeys = (raw, known, at) => Object.keys(raw).filter((key) => !known.includes(key)).map((key) => `${at}${key}: unknown field`);
-function whole(raw, key, fallback, max, errors) {
+function whole(raw, key, fallback, max, errors, overMax) {
   const v = raw[key];
   if (v === undefined) {
     return fallback;
   }
   if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > max) {
-    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}`);
+    const why = overMax !== undefined && typeof v === "number" && Number.isFinite(v) && v > max ? `. ${overMax}` : "";
+    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}${why}`);
     return fallback;
   }
   return Math.floor(v);
@@ -184,7 +185,7 @@ function step(v, at, errors) {
     errors.push(`${at}: expected a command, or { "run": "<command>", "profile"?, "when"? }; left out`);
     return null;
   }
-  errors.push(...unknownKeys(v, ["run", "profile", "when"], `${at}.`));
+  errors.push(...unknownKeys(v, ["run", "profile", "when", "background"], `${at}.`));
   let profile = "fast";
   if (v.profile === "full") {
     profile = "full";
@@ -196,6 +197,12 @@ function step(v, at, errors) {
     when = v.when;
   } else if (v.when !== undefined) {
     errors.push(`${at}.when: expected a non-empty list of globs; the check runs on every change`);
+  }
+  if (v.background === true) {
+    return { run: v.run, profile, when, background: true };
+  }
+  if (v.background !== undefined && v.background !== false) {
+    errors.push(`${at}.background: expected true or false; it runs in the foreground`);
   }
   return { run: v.run, profile, when };
 }
@@ -655,7 +662,7 @@ function parseConfig(text) {
   }
   const cfg = {
     verify,
-    verifyTimeoutSec: whole(raw, "verifyTimeoutSec", DEFAULTS.verifyTimeoutSec, 600, errors),
+    verifyTimeoutSec: whole(raw, "verifyTimeoutSec", DEFAULTS.verifyTimeoutSec, 600, errors, 'Mark long checks "background": true in verify: they run with no time limit, and only shipping waits for them'),
     protected: strings(raw, "protected", DEFAULTS.protected, errors),
     tests: strings(raw, "tests", DEFAULTS.tests, errors),
     secrets: strings(raw, "secrets", DEFAULTS.secrets, errors),
@@ -720,7 +727,8 @@ var FRESH = {
   hasTouchedTests: false,
   tier: "none",
   size: { files: 0, lines: 0 },
-  verify: { status: "none", rounds: 0, failed: null, at: 0, tree: null, profile: "none", fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null },
+  verify: { status: "none", rounds: 0, failed: null, at: 0, tree: null, profile: "none", fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null, runs: {} },
+  background: {},
   review: { status: "none", round: 0, agentId: null, isAuto: false, summary: null, at: 0, tree: null, agents: [], stalled: 0, isStalled: false, isLooping: false },
   findings: [],
   allow: [],
@@ -4271,9 +4279,11 @@ function lintCheck(run) {
   return [...new Set(found)];
 }
 var lintChecks = (steps) => steps.flatMap((one) => lintCheck(one.run).map((problem) => `\`${one.run}\`: ${problem}`));
+var isApplying = (step, changed) => step.when === null || changed.some((file) => matchesAny(file, step.when ?? []));
 function stepsFor(steps, profile, changed) {
-  return steps.filter((one) => (profile === "full" || one.profile === "fast") && (one.when === null || changed.some((file) => matchesAny(file, one.when ?? []))));
+  return steps.filter((one) => one.background !== true && (profile === "full" || one.profile === "fast") && isApplying(one, changed));
 }
+var backgroundFor = (steps, changed) => steps.filter((one) => one.background === true && isApplying(one, changed));
 
 // hooks/contentrules.ts
 function addedLines(before, after) {
@@ -4345,6 +4355,23 @@ function contentReason(hit, path) {
 // hooks/findings.ts
 var openBlocking = (findings, reviewer) => findings.filter((one) => one.status === "open" && one.isBlocking && (reviewer === undefined || one.reviewer === reviewer));
 
+// hooks/testruns.ts
+function ago(ms) {
+  const minutes = Math.floor(Math.max(0, ms) / 60000);
+  if (minutes < 1) {
+    return "<1m";
+  }
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+function runningOn(loop, run) {
+  const one = loop.background?.[run];
+  return one !== undefined && loop.tree !== null && one.tree === loop.tree ? one : null;
+}
+function recordOn(loop, run) {
+  const one = loop.verify.runs?.[run];
+  return one !== undefined && loop.tree !== null && one.tree === loop.tree && !one.isOlderTree ? one : null;
+}
+
 // hooks/gate.ts
 var ORDER = ["none", "low", "medium", "high"];
 var raise = (tier) => tier === "none" ? "none" : ORDER[Math.min(ORDER.length - 1, ORDER.indexOf(tier) + 1)] ?? "high";
@@ -4396,7 +4423,7 @@ var NO_FACTS = { errors: [], lint: [], policy: "same" };
 var short = (tree) => (tree ?? "none").slice(0, 8);
 var list = (items, cap = 5) => `${items.slice(0, cap).join(", ")}${items.length > cap ? ", …" : ""}`;
 var specialistsFor = (loop, cfg) => cfg.reviewers.filter((one) => loop.changed.some((file) => one.when.some((glob) => matches(file, glob))));
-function verificationRow(loop, cfg, tier) {
+function verificationRow(loop, cfg, tier, facts) {
   const label = "Verification";
   if (loop.verify.status === "error") {
     return { label, isMet: false, note: `the harness could not verify (${loop.verify.failed ?? "unknown error"}); /devloop verify retries` };
@@ -4407,7 +4434,12 @@ function verificationRow(loop, cfg, tier) {
   if (cfg.verify.length === 0) {
     return { label, isMet: tier === "low", note: "no verify commands in devloop.json: nothing proves the work" };
   }
-  const steps = stepsFor(cfg.verify, "full", loop.changed);
+  const foreground = stepsFor(cfg.verify, "full", loop.changed);
+  const background = backgroundFor(cfg.verify, loop.changed);
+  const steps = [...foreground, ...background];
+  if (loop.tree === null && background.length > 0) {
+    return { label, isMet: false, note: `background checks need a git repository to record a result against: ${list(background.map((one) => one.run))}` };
+  }
   const isMoved = loop.isDirty && loop.verify.status === "pass";
   const pending = steps.filter((one) => isMoved || loop.tree === null || loop.verify.passedOn[one.run] !== loop.tree);
   const isOnTree = loop.verify.tree === loop.tree && !isMoved;
@@ -4416,7 +4448,7 @@ function verificationRow(loop, cfg, tier) {
   }
   if (loop.tree === null) {
     const hasPassed = loop.verify.status === "pass" && !loop.isDirty;
-    const needsFull = steps.some((one) => one.profile === "full");
+    const needsFull = foreground.some((one) => one.profile === "full");
     const isMet = hasPassed && (loop.verify.profile === "full" || !needsFull);
     return {
       label,
@@ -4424,11 +4456,36 @@ function verificationRow(loop, cfg, tier) {
       note: isMet ? needsFull ? "fast and full checks pass" : "passes" : hasPassed ? "fast checks pass; the full checks run when the change ships" : "not run since the last edit"
     };
   }
+  const hasFull = foreground.some((one) => one.profile === "full");
   if (pending.length === 0) {
-    return { label, isMet: true, note: steps.some((one) => one.profile === "full") ? "fast and full checks pass" : steps.length === 0 ? "no check applies to this change" : "passes" };
+    return { label, isMet: true, note: hasFull ? "fast and full checks pass" : steps.length === 0 ? "no check applies to this change" : "passes" };
   }
   const names = pending.map((one) => one.run);
-  const isFastDone = pending.every((one) => one.profile === "full");
+  const waiting = isMoved ? [] : pending.filter((one) => one.background === true).map((one) => one.run);
+  const running = waiting.flatMap((run) => {
+    const one = runningOn(loop, run);
+    return one === null ? [] : [{ run, startedAt: one.startedAt }];
+  });
+  if (running.length > 0) {
+    const since = facts.now === undefined ? "" : ` (started ${ago(facts.now - Math.min(...running.map((one) => one.startedAt)))} ago)`;
+    return { label, isMet: false, note: `tests still running${since}: ${list(running.map((one) => one.run))}` };
+  }
+  const failing = waiting.filter((run) => recordOn(loop, run)?.outcome === "fail");
+  if (failing.length > 0) {
+    return { label, isMet: false, note: `failing: ${list(failing)} (in the background)` };
+  }
+  const couldNot = waiting.flatMap((run) => {
+    const outcome = recordOn(loop, run)?.outcome;
+    return outcome === undefined || outcome === "pass" || outcome === "fail" ? [] : [`${run} (${outcome})`];
+  });
+  if (couldNot.length > 0) {
+    return { label, isMet: false, note: `could not run on this tree: ${list(couldNot)}; fix the command` };
+  }
+  if (pending.every((one) => one.background === true)) {
+    const done = foreground.length === 0 ? "" : hasFull ? "fast and full checks pass; " : "fast checks pass; ";
+    return { label, isMet: false, note: `${done}background checks still to run: ${list(names)} (they start at the next stop)` };
+  }
+  const isFastDone = pending.every((one) => one.profile === "full" || one.background === true);
   return {
     label,
     isMet: false,
@@ -4485,7 +4542,7 @@ function gate(loop, cfg, facts = NO_FACTS) {
   if (hiddenFromGit.length > 0) {
     checks.push({ label: "Files hidden from git", isMet: false, note: `${list(hiddenFromGit)} carr${hiddenFromGit.length === 1 ? "ies" : "y"} the skip-worktree or assume-unchanged bit, so their changes are not in the tree judged: clear it (git update-index --no-skip-worktree --no-assume-unchanged <file>)` });
   }
-  checks.push(verificationRow(loop, cfg, tier));
+  checks.push(verificationRow(loop, cfg, tier, facts));
   if (loop.phase === "spec") {
     checks.push({ label: "Spec", isMet: false, note: "awaiting a person: /devloop approve" });
   }
@@ -4665,7 +4722,7 @@ function infraAdvice(command, outcome, timeoutSec) {
     case "not-found":
       return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`;
     case "timeout":
-      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json or make the check faster; no code change to the work fixes this.`;
+      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.`;
     case "killed":
       return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`;
     default:
@@ -5844,7 +5901,7 @@ function statelessGate(proof, cfg, facts) {
   });
   return { loop, rows, isGreen: rows.every((row) => row.isMet) };
 }
-var checksFor = (cfg, files, isEmpty) => isEmpty ? [] : stepsFor(cfg.verify, "full", files).map((one) => one.run);
+var checksFor = (cfg, files, isEmpty) => isEmpty ? [] : [...stepsFor(cfg.verify, "full", files), ...backgroundFor(cfg.verify, files)].map((one) => one.run);
 
 // hooks/residual.ts
 var RESIDUAL_RISKS = [

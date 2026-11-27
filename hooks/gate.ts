@@ -5,8 +5,9 @@
 import type { Loop, Tier } from '../types'
 import type { Config } from './config'
 import { openBlocking } from './findings'
-import { instructionGlobs, matches, matchesAny, stepsFor, tierOf } from './rules'
+import { backgroundFor, instructionGlobs, matches, matchesAny, stepsFor, tierOf } from './rules'
 import { isTaskStateOnly } from './tasks'
+import { ago, recordOn, runningOn } from './testruns'
 
 // ---------------------------------------------------------------- tier
 
@@ -93,6 +94,8 @@ export type GateFacts = {
    * changes out of the tree judged, so any one keeps the gate shut.
    */
   hiddenFromGit?: readonly string[]
+  /** The time now, so the Verification row can say how long a background run has gone; absent, it names no time. */
+  now?: number
 }
 
 /** What git and the `tasks` command said about two trees: the paths that differ (null: git could not say), and whether the task files validate. */
@@ -153,11 +156,12 @@ export const specialistsFor = (loop: Pick<Loop, 'changed'>, cfg: Config): Config
   cfg.reviewers.filter(one => loop.changed.some(file => one.when.some(glob => matches(file, glob))))
 
 /**
- * The Verification row: met only when every fast and full check of the
- * policy in force that applies to this change has a pass on this very tree.
- * Its note names the checks still to run.
+ * The Verification row: met only when every fast, full and background check
+ * of the policy in force that applies to this change has a pass on this very
+ * tree. Its note names the checks still to run, and what a background check
+ * is doing on this tree: running, failing, or unable to run.
  */
-function verificationRow(loop: Loop, cfg: Config, tier: Tier): Check {
+function verificationRow(loop: Loop, cfg: Config, tier: Tier, facts: GateFacts): Check {
   const label = 'Verification'
   if (loop.verify.status === 'error') {
     return { label, isMet: false, note: `the harness could not verify (${loop.verify.failed ?? 'unknown error'}); /devloop verify retries` }
@@ -168,7 +172,13 @@ function verificationRow(loop: Loop, cfg: Config, tier: Tier): Check {
   if (cfg.verify.length === 0) {
     return { label, isMet: tier === 'low', note: 'no verify commands in devloop.json: nothing proves the work' }
   }
-  const steps = stepsFor(cfg.verify, 'full', loop.changed)
+  const foreground = stepsFor(cfg.verify, 'full', loop.changed)
+  const background = backgroundFor(cfg.verify, loop.changed)
+  const steps = [...foreground, ...background]
+  if (loop.tree === null && background.length > 0) {
+    // A background result is recorded against a tree: outside git none starts, so say why rather than wait (Review Focus 5).
+    return { label, isMet: false, note: `background checks need a git repository to record a result against: ${list(background.map(one => one.run))}` }
+  }
   // An edit since the last pass moved the tree the passes name.
   const isMoved = loop.isDirty && loop.verify.status === 'pass'
   const pending = steps.filter(one => isMoved || loop.tree === null || loop.verify.passedOn[one.run] !== loop.tree)
@@ -181,7 +191,7 @@ function verificationRow(loop: Loop, cfg: Config, tier: Tier): Check {
   if (loop.tree === null) {
     // Outside git there is no tree to name a pass by: the last run and its profile decide.
     const hasPassed = loop.verify.status === 'pass' && !loop.isDirty
-    const needsFull = steps.some(one => one.profile === 'full')
+    const needsFull = foreground.some(one => one.profile === 'full')
     const isMet = hasPassed && (loop.verify.profile === 'full' || !needsFull)
 
     return {
@@ -190,11 +200,42 @@ function verificationRow(loop: Loop, cfg: Config, tier: Tier): Check {
       note: isMet ? (needsFull ? 'fast and full checks pass' : 'passes') : hasPassed ? 'fast checks pass; the full checks run when the change ships' : 'not run since the last edit',
     }
   }
+  const hasFull = foreground.some(one => one.profile === 'full')
   if (pending.length === 0) {
-    return { label, isMet: true, note: steps.some(one => one.profile === 'full') ? 'fast and full checks pass' : steps.length === 0 ? 'no check applies to this change' : 'passes' }
+    return { label, isMet: true, note: hasFull ? 'fast and full checks pass' : steps.length === 0 ? 'no check applies to this change' : 'passes' }
   }
   const names = pending.map(one => one.run)
-  const isFastDone = pending.every(one => one.profile === 'full')
+  // What each pending background check is doing on this tree; after an edit the loop's tree is not the tree now, so its runs say nothing.
+  const waiting = isMoved ? [] : pending.filter(one => one.background === true).map(one => one.run)
+  const running = waiting.flatMap(run => {
+    const one = runningOn(loop, run)
+
+    return one === null ? [] : [{ run, startedAt: one.startedAt }]
+  })
+  if (running.length > 0) {
+    const since = facts.now === undefined ? '' : ` (started ${ago(facts.now - Math.min(...running.map(one => one.startedAt)))} ago)`
+
+    return { label, isMet: false, note: `tests still running${since}: ${list(running.map(one => one.run))}` }
+  }
+  const failing = waiting.filter(run => recordOn(loop, run)?.outcome === 'fail')
+  if (failing.length > 0) {
+    return { label, isMet: false, note: `failing: ${list(failing)} (in the background)` }
+  }
+  // Not found or killed: it is not started again on this tree, so the next stop would not help.
+  const couldNot = waiting.flatMap(run => {
+    const outcome = recordOn(loop, run)?.outcome
+
+    return outcome === undefined || outcome === 'pass' || outcome === 'fail' ? [] : [`${run} (${outcome})`]
+  })
+  if (couldNot.length > 0) {
+    return { label, isMet: false, note: `could not run on this tree: ${list(couldNot)}; fix the command` }
+  }
+  if (pending.every(one => one.background === true)) {
+    const done = foreground.length === 0 ? '' : hasFull ? 'fast and full checks pass; ' : 'fast checks pass; '
+
+    return { label, isMet: false, note: `${done}background checks still to run: ${list(names)} (they start at the next stop)` }
+  }
+  const isFastDone = pending.every(one => one.profile === 'full' || one.background === true)
 
   return {
     label,
@@ -273,7 +314,7 @@ export function gate(loop: Loop, cfg: Config, facts: GateFacts = NO_FACTS): Chec
   if (hiddenFromGit.length > 0) {
     checks.push({ label: 'Files hidden from git', isMet: false, note: `${list(hiddenFromGit)} carr${hiddenFromGit.length === 1 ? 'ies' : 'y'} the skip-worktree or assume-unchanged bit, so their changes are not in the tree judged: clear it (git update-index --no-skip-worktree --no-assume-unchanged <file>)` })
   }
-  checks.push(verificationRow(loop, cfg, tier))
+  checks.push(verificationRow(loop, cfg, tier, facts))
   if (loop.phase === 'spec') {
     checks.push({ label: 'Spec', isMet: false, note: 'awaiting a person: /devloop approve' })
   }

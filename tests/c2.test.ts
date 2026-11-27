@@ -83,7 +83,7 @@ describe('1. the audit trail and records', () => {
   test('a finding a person resolves is audited; the verdicts of a round name the reviewer and the tree', async ($, on) => {
     const w = world(on)
     const finding = { id: 'F1', reviewer: 'general', severity: 'high', file: '', line: 0, quote: '', problem: 'unreadable', evidence: 'a person', isPreExisting: false, route: 'decision', status: 'open', isBlocking: true, round: 1, seen: 1, note: null }
-    w.store['loop:/repo'] = { shape: 'loop-12', value: { ...FRESH, root: '/repo', sessionId: 's1', findings: [finding], review: { ...FRESH.review, status: 'fail', round: 1, tree: 't0' } } }
+    w.store['loop:/repo'] = { shape: 'loop-13', value: { ...FRESH, root: '/repo', sessionId: 's1', findings: [finding], review: { ...FRESH.review, status: 'fail', round: 1, tree: 't0' } } }
     await start($)
     for (const origin of OTHERS) {
       expect(await devloop($, 'findings resolve F1 read it myself', origin)).toMatch(/resolved by a person/)
