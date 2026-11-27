@@ -286,13 +286,76 @@ function reviewRow(loop: Loop, cfg: Config, name: string, label: string, rows: r
       ? { label, isMet: true, note: isCarried ? `passed on ${short(review.tree)}; only task state has changed since` : `passed in round ${review.round}${notes > 0 ? ` (${notes} note${notes === 1 ? '' : 's'}, nothing blocking)` : ''}` }
       : { label, isMet: false, note: `round ${review.round} of ${cfg.maxReviewRounds} found problems: ${open.map(one => one.id).join(', ')} open` }
   }
+  // A pass covers the tree it read: after later edits it is out of date, and no round starts until the change is ready again (rule 15).
+  const next = cfg.autoReview ? 'a new round starts when the change is ready (the devloop_review tool, or a push)' : 'a person starts a new round with /devloop review ("autoReview" is off)'
+  const stale = `passed on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}: the review is out of date, and ${next}`
   if (isDone) {
-    return { label, isMet: false, note: `${review.status === 'pass' ? 'passed' : 'reviewed'} on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}` }
+    return { label, isMet: false, note: review.status === 'pass' ? stale : `reviewed on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}` }
   }
   if (review.status === 'running') {
     return { label, isMet: false, note: `round ${review.round} running` }
   }
-  return { label, isMet: false, note: review.round >= cfg.maxReviewRounds ? `the cap of ${cfg.maxReviewRounds} rounds is spent: a person reads the change` : 'not run: /devloop review' }
+  if (isCapSpent(review, cfg)) {
+    return { label, isMet: false, note: `the cap of ${cfg.maxReviewRounds} rounds is spent: a person reads the change` }
+  }
+
+  return { label, isMet: false, note: review.cycle.ended === 'pass' && review.tree !== null && review.tree !== loop.tree ? stale : 'not run: /devloop review' }
+}
+
+// ---------------------------------------------------------------- when a round may start
+
+/**
+ * Whether the review cap is spent (rule 5): `maxReviewRounds` bounds one
+ * cycle, discarded rounds included (rule 11), and a cycle that ended with a
+ * pass spends nothing, since the next round starts a new one.
+ */
+export const isCapSpent = (review: Pick<Loop['review'], 'round' | 'cycle'>, cfg: Pick<Config, 'maxReviewRounds'>): boolean =>
+  review.round >= cfg.maxReviewRounds && review.cycle.ended !== 'pass'
+
+/** Whether two stalled rounds ended the cycle: a cycle a person then settled with a pass is over, and the next round starts a new one. */
+export const isStallSpent = (review: Pick<Loop['review'], 'isStalled' | 'cycle'>): boolean => review.isStalled && review.cycle.ended !== 'pass'
+
+/** Why no round starts when two rounds in a row closed no finding. */
+export const STALLED_TEXT = 'The review loop stopped after two rounds in a row closed no finding. This change needs a person to read it; /devloop done closes it when they have.'
+
+/** Why no round starts once the cycle's rounds are spent. */
+export const capText = (cfg: Pick<Config, 'maxReviewRounds'>): string =>
+  `The review cap of ${cfg.maxReviewRounds} rounds is spent. This change needs a person to read it; /devloop done closes it when they have.`
+
+/** Why no round starts on a change with no files. */
+export const NOTHING_TEXT = 'Nothing has changed, so there is nothing to review.'
+
+/**
+ * Why a round the harness or the agent would start may not (rule 4), or
+ * null when it may: the first that applies. `isReviewedHere` is whether a
+ * verdict on record covers the tree now (reached on it, or carried to it).
+ * A person's own /devloop review is not judged here.
+ */
+export function reviewRefusal(loop: Loop, cfg: Config, isReviewedHere: boolean): string | null {
+  const tier = tierFor(loop, cfg)
+  if (!cfg.autoReview) {
+    return 'autoReview is off: a person starts rounds with /devloop review'
+  }
+  if (loop.phase === 'spec') {
+    return 'A spec is being written: review rounds start once a person approves it.'
+  }
+  if (loop.review.status === 'running') {
+    return `Review round ${loop.review.round} is already running.`
+  }
+  if (isStallSpent(loop.review)) {
+    return STALLED_TEXT
+  }
+  if (isCapSpent(loop.review, cfg)) {
+    return capText(cfg)
+  }
+  if (tier === 'none') {
+    return NOTHING_TEXT
+  }
+  if (tier === 'low') {
+    return 'This change is low risk, so it needs no review round.'
+  }
+
+  return isReviewedHere ? `This tree was already reviewed in round ${loop.review.round}.` : null
 }
 
 /**

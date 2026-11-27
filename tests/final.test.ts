@@ -81,14 +81,14 @@ describe('D2 F1: no carry target is stored; a verdict covers a tree only by the 
     moveTo(w, 'T1', ['src/charge.ts'])
     await edit($, '/repo/src/charge.ts')
     expect((await stop($)).block).toBeUndefined()
-    expect(await devloop($, 'review')).toMatch(/round 1 of 3 started/)
+    expect(await devloop($, 'review')).toMatch(/round 1 of 2 started/)
     await reply($, last(w), `${F_HIGH}\nVERDICT: FAIL`)
-    expect(reviewRow(await statusOf($))).toMatch(/\[ \] Independent review: round 1 of 3 found problems: F1 open/)
+    expect(reviewRow(await statusOf($))).toMatch(/\[ \] Independent review: round 1 of 2 found problems: F1 open/)
     // A task-state edit (T2): the failing verdict carries, findings and all.
     moveTo(w, 'T2', ['src/charge.ts', '.tasks/a/state.md'])
     w.diffs['T1 T2'] = ['.tasks/a/state.md']
     expect((await stop($)).block).toBeUndefined()
-    expect(reviewRow(await statusOf($))).toMatch(/\[ \] Independent review: round 1 of 3 found problems: F1 open/)
+    expect(reviewRow(await statusOf($))).toMatch(/\[ \] Independent review: round 1 of 2 found problems: F1 open/)
     // The fix (T3) and a passing round on it.
     moveTo(w, 'T3', ['src/charge.ts', '.tasks/a/state.md'])
     w.diffs['T1 T3'] = ['.tasks/a/state.md', 'src/charge.ts']
@@ -96,7 +96,7 @@ describe('D2 F1: no carry target is stored; a verdict covers a tree only by the 
     await edit($, '/repo/src/charge.ts')
     expect((await stop($)).block).toBeUndefined()
     // The loop is on: the stop started round 2 by itself (or a person does).
-    expect(await devloop($, 'review')).toMatch(/round 2 (of 3 started|is already running)/)
+    expect(await devloop($, 'review')).toMatch(/round 2 (of 2 started|is already running)/)
     await reply($, last(w), 'F1 | resolved\nVERDICT: PASS')
     expect(reviewRow(await statusOf($))).toMatch(/\[x\] Independent review: passed in round 2/)
     // The fix reverted: the tree is T2 again, which round 2 never saw. Round 2's verdict does not carry back over a code change.

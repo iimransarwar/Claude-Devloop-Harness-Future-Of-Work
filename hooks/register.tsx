@@ -1900,7 +1900,7 @@ export const register: Register = on => {
       const refreshed = await refresh($, at, cfg)
       // With no checks to run, a review loop that has begun still goes on (11a).
       if (loop.blocked === null) {
-        await maybeReview($, at, refreshed.loop)
+        await maybeReview($, at, cfg, refreshed.loop)
       }
 
       return limited(below)
@@ -1915,6 +1915,10 @@ export const register: Register = on => {
         await save($, at.root, before => note({ ...before, verify: { ...before.verify, blockedTree: null } }, 'verify', 'stopped with nothing changed since the last blocked stop: fix loop ended', now))
         $.ui.toast(`devloop: the agent stopped again with nothing changed since the last blocked stop; verification still fails (${loop.verify.failed ?? ''}). This needs you.`, { timeoutMs: 12_000 })
       }
+      // A tree verified before this stop (by the ship gate, say) whose checks passed or could not run: a fix to re-review still is (rule 14).
+      if (loop.verify.status === 'pass' || loop.verify.infra !== null) {
+        await maybeReview($, at, cfg, await loopOf($))
+      }
 
       return limited(below)
     }
@@ -1923,6 +1927,8 @@ export const register: Register = on => {
     if (ran.infra !== null && ran.failed !== null) {
       const advice = infraAdvice(ran.failed, ran.infra, cfg.verifyTimeoutSec)
       $.ui.toast(`devloop: ${advice}`, { timeoutMs: 15_000 })
+      // A round never waits on tests: a fix to re-review is, though they could not run (rule 14).
+      await maybeReview($, at, cfg, after)
       await atTurnEnd($, at, cfg, snap.tree, isIdle)
 
       return { ...below, additionalContext: [...(below.additionalContext ?? []), `devloop: verification could not run, so the stop is not blocked and no fix round is spent. ${advice}`] }
@@ -1949,7 +1955,7 @@ export const register: Register = on => {
       }
     }
     if (failure === null) {
-      await maybeReview($, at, await loopOf($))
+      await maybeReview($, at, cfg, await loopOf($))
 
       return limited(below)
     }

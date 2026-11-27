@@ -93,6 +93,24 @@ export type Finding = {
   note: string | null
 }
 
+/** One review cycle: from its first round to a pass, the cap or a stall. */
+export type ReviewCycle = {
+  /** The number of the cycle's first finding id (F<from>). */
+  from: number
+  /** How the cycle ended; null while it goes on. */
+  ended: 'pass' | 'cap' | 'stalled' | null
+  /** The one summary of the cycle's end, for the person. */
+  summary: string | null
+  /** Rounds of this cycle whose verdict was thrown away because the tree moved while they ran (rule 11): each still counts toward the cap. */
+  discarded: number
+  /** The tree of this cycle's last round that settled: the next round reads the lines since it, and with none, the whole change. */
+  settledTree: string | null
+  /** The tree the person was last told about. */
+  toldTree: string | null
+  /** The line said about edits made after the cycle ended. */
+  followUp: string | null
+}
+
 /** One reviewer agent of a round: the general reviewer or a specialist. */
 export type ReviewAgent = {
   agentId: string
@@ -277,6 +295,13 @@ export type Loop = {
     isLooping: boolean
     /** The round in progress reads only the lines changed since the last round (DESIGN 4.16, decision 8); absent or false: the whole change. */
     isScoped?: boolean
+    /**
+     * The review cycle this round belongs to (agent-driven review, rules 5,
+     * 11, 13-15): `maxReviewRounds` bounds one cycle, which ends with a pass,
+     * the cap or a stall; the next ready moment after a pass starts a new one
+     * at round 1.
+     */
+    cycle: ReviewCycle
   }
   /** Every finding of this change's review rounds, with its status. */
   findings: Finding[]

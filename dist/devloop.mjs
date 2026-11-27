@@ -83,7 +83,7 @@ var DEFAULTS = {
   network: null,
   mode: "enforce",
   maxFixRounds: 2,
-  maxReviewRounds: 3,
+  maxReviewRounds: 2,
   autoReview: true,
   budgetUsd: null,
   instructionMaxLines: 200,
@@ -729,7 +729,20 @@ var FRESH = {
   size: { files: 0, lines: 0 },
   verify: { status: "none", rounds: 0, failed: null, at: 0, tree: null, profile: "none", fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null, runs: {} },
   background: {},
-  review: { status: "none", round: 0, agentId: null, isAuto: false, summary: null, at: 0, tree: null, agents: [], stalled: 0, isStalled: false, isLooping: false },
+  review: {
+    status: "none",
+    round: 0,
+    agentId: null,
+    isAuto: false,
+    summary: null,
+    at: 0,
+    tree: null,
+    agents: [],
+    stalled: 0,
+    isStalled: false,
+    isLooping: false,
+    cycle: { from: 1, ended: null, summary: null, discarded: 0, settledTree: null, toldTree: null, followUp: null }
+  },
   findings: [],
   allow: [],
   refusals: { rule: "", count: 0 },
@@ -4589,14 +4602,20 @@ function reviewRow(loop, cfg, name, label, rows, facts) {
     }
     return open.length === 0 ? { label, isMet: true, note: isCarried ? `passed on ${short(review.tree)}; only task state has changed since` : `passed in round ${review.round}${notes > 0 ? ` (${notes} note${notes === 1 ? "" : "s"}, nothing blocking)` : ""}` } : { label, isMet: false, note: `round ${review.round} of ${cfg.maxReviewRounds} found problems: ${open.map((one) => one.id).join(", ")} open` };
   }
+  const next = cfg.autoReview ? "a new round starts when the change is ready (the devloop_review tool, or a push)" : 'a person starts a new round with /devloop review ("autoReview" is off)';
+  const stale = `passed on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}: the review is out of date, and ${next}`;
   if (isDone) {
-    return { label, isMet: false, note: `${review.status === "pass" ? "passed" : "reviewed"} on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}` };
+    return { label, isMet: false, note: review.status === "pass" ? stale : `reviewed on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}` };
   }
   if (review.status === "running") {
     return { label, isMet: false, note: `round ${review.round} running` };
   }
-  return { label, isMet: false, note: review.round >= cfg.maxReviewRounds ? `the cap of ${cfg.maxReviewRounds} rounds is spent: a person reads the change` : "not run: /devloop review" };
+  if (isCapSpent(review, cfg)) {
+    return { label, isMet: false, note: `the cap of ${cfg.maxReviewRounds} rounds is spent: a person reads the change` };
+  }
+  return { label, isMet: false, note: review.cycle.ended === "pass" && review.tree !== null && review.tree !== loop.tree ? stale : "not run: /devloop review" };
 }
+var isCapSpent = (review, cfg) => review.round >= cfg.maxReviewRounds && review.cycle.ended !== "pass";
 function gate(loop, cfg, facts = NO_FACTS) {
   const checks = [];
   const tier = tierFor(loop, cfg);

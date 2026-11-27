@@ -52,11 +52,15 @@ export function barParts(loop: Loop, cfg: Config, checks: readonly Check[], now?
                 : { text: 'not run', color: 'subtle' }
   // A verdict with a promoted checklist failure on its tree is a failing verdict (as `brief` reads it).
   const isFailing = loop.review.status === 'pass' && (loop.checklistFails ?? []).some(one => one.tree !== null && one.tree === loop.review.tree)
+  // A pass on another tree is out of date (rule 15), unless the gate's row carries it here (only task state changed since).
+  const isPassed = loop.review.status === 'pass' || (loop.review.status === 'none' && loop.review.cycle.ended === 'pass' && loop.review.tree !== null)
+  const isStale = isPassed && loop.review.tree !== loop.tree && checks.find(one => one.label === 'Independent review')?.isMet !== true
   const review: BarParts['review'] = tier === 'low' ? null
     : isFailing || loop.review.status === 'fail' ? { text: '✗ changes asked', color: 'error' }
-      : loop.review.status === 'pass' ? { text: '✓ passed', color: 'success' }
-        : loop.review.status === 'running' ? { text: '… running', color: 'warning' }
-          : { text: 'not run', color: 'subtle' }
+      : isStale ? { text: 'out of date', color: 'warning' }
+        : loop.review.status === 'pass' ? { text: '✓ passed', color: 'success' }
+          : loop.review.status === 'running' ? { text: '… running', color: 'warning' }
+            : { text: 'not run', color: 'subtle' }
 
   return {
     phase,

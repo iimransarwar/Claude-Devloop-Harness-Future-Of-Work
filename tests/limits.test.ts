@@ -114,7 +114,7 @@ describe('the loop limit in the module', () => {
     // A review the agent starts is refused with the same text; a person's own runs.
     expect(await devloop($, 'review', AGENT)).toMatch(/^devloop: Loop limit: 2 failed rounds/)
     expect(w.spawned).toEqual([])
-    expect(await devloop($, 'review')).toMatch(/Review round 1 of 3 started/)
+    expect(await devloop($, 'review')).toMatch(/Review round 1 of 2 started/)
     expect(w.spawned.length).toBe(1)
   })
 
@@ -156,7 +156,7 @@ describe('the loop limit in the module', () => {
     expect([first.block, first.additionalContext ?? []]).toEqual([undefined, []])
     expect(w.toasts).toContain('devloop (observe): 1 failed rounds on this branch; in enforce mode devloop would stop here')
     expect((w.store['ledger:/repo'] as { kind: string }[]).some(one => one.kind === 'loop-limit')).toBe(true)
-    expect(await devloop($, 'review', AGENT)).toMatch(/Review round 1 of 3 started/)
+    expect(await devloop($, 'review', AGENT)).toMatch(/Review round 1 of 2 started/)
   })
 
   test('a review round that ends FAIL counts once, and at the limit the builder is not woken: the message is appended once', async ($, on) => {

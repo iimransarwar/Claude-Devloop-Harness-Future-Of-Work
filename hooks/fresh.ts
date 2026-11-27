@@ -27,7 +27,10 @@ export const FRESH: Loop = {
   size: { files: 0, lines: 0 },
   verify: { status: 'none', rounds: 0, failed: null, at: 0, tree: null, profile: 'none', fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null, runs: {} },
   background: {},
-  review: { status: 'none', round: 0, agentId: null, isAuto: false, summary: null, at: 0, tree: null, agents: [], stalled: 0, isStalled: false, isLooping: false },
+  review: {
+    status: 'none', round: 0, agentId: null, isAuto: false, summary: null, at: 0, tree: null, agents: [], stalled: 0, isStalled: false, isLooping: false,
+    cycle: { from: 1, ended: null, summary: null, discarded: 0, settledTree: null, toldTree: null, followUp: null },
+  },
   findings: [],
   allow: [],
   refusals: { rule: '', count: 0 },

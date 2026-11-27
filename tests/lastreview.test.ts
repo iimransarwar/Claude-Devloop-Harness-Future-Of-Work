@@ -178,7 +178,7 @@ async function reviewing($: Dollar, w: World, asked: string[]): Promise<{ id: st
   w.tree = 't1'
   await edit($, '/repo/src/a.ts')
   await stop($)
-  expect(await devloop($, 'review')).toMatch(/round 1 of 3 started/)
+  expect(await devloop($, 'review')).toMatch(/round 1 of 2 started/)
   asked.length = 0
 
   return { id: w.spawned[w.spawned.length - 1]?.agentId ?? '', diff: `/data/devloop/repos/${digest('/repo')}/review-1.diff` }

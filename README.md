@@ -199,9 +199,9 @@ otherwise. A change larger than `blastRadius` moves up a tier. Medium and
 high changes need the independent review to ship.
 
 **Limits.** By default the agent gets 2 tries to fix a failing check
-(`maxFixRounds`) and 3 review rounds (`maxReviewRounds`). After 6 failed
-rounds on one branch (`loop.failedRounds`) it stops until you run
-`/devloop continue`.
+(`maxFixRounds`) and 2 review rounds (`maxReviewRounds`): one review and
+one check of the fix. After 6 failed rounds on one branch
+(`loop.failedRounds`) it stops until you run `/devloop continue`.
 
 **Where the rules are enforced.** The same policy is enforced in more than
 one place, so a missing piece does not fail open: the plugin's hooks module,

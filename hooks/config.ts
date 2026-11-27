@@ -204,7 +204,7 @@ export const DEFAULTS: Config = {
   network: null,
   mode: 'enforce',
   maxFixRounds: 2,
-  maxReviewRounds: 3,
+  maxReviewRounds: 2,
   autoReview: true,
   budgetUsd: null,
   instructionMaxLines: 200,

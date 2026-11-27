@@ -306,7 +306,7 @@ test('a finished build is reviewed in a fresh context, and its findings come bac
   expect(w.spawned.map(one => one.subagentType)).toEqual(['devloop:reviewer'])
   expect(await devloop($, 'status')).toMatch(/round 1 running/)
   const reviewer = w.spawned[0]?.agentId ?? ''
-  expect(w.spawned[0]?.prompt).toMatch(/round 1 of 3/)
+  expect(w.spawned[0]?.prompt).toMatch(/round 1 of 2/)
   // F8/F15: the reviewer is handed the diff as a file in the harness's state, not a command to run.
   const diff = /in (\/data\/devloop\/repos\/[0-9a-f]+\/review-1\.diff)/.exec(w.spawned[0]?.prompt ?? '')?.[1] ?? ''
   expect(diff).not.toBe('')
@@ -328,7 +328,7 @@ test('a finished build is reviewed in a fresh context, and its findings come bac
 
   // B2: findings are structured and the quote is checked against the code.
   await $.turn.complete({ answer: 'F1 | high | src/payments/charge.ts:10 | return Math.floor(cents) | rounds down | a test with 0.5\n\nVERDICT: FAIL', durationMs: 1, isAborted: false, turnId: 't', agentId: reviewer, reason: 'answer' })
-  expect(w.submitted[0]).toMatch(/round 1 of 3/)
+  expect(w.submitted[0]).toMatch(/round 1 of 2/)
   expect(w.submitted[0]).toMatch(/rounds down/)
 
   // The fix moves the tree: verification runs again and a second round starts.
@@ -346,13 +346,13 @@ test('a finished build is reviewed in a fresh context, and its findings come bac
   expect(await devloop($, 'metrics')).toMatch(/review rounds: 2/)
 })
 
-test('F6: a verdict for a tree the reviewer never read is discarded and does not count', async ($, on) => {
+test('F6: a verdict for a tree the reviewer never read is discarded, and still uses a round', async ($, on) => {
   const w = world(on)
   await start($)
   await edit($, '/repo/src/a.ts')
   change(w, 'src/a.ts')
   await stop($)
-  expect(await devloop($, 'review')).toMatch(/round 1 of 3 started/)
+  expect(await devloop($, 'review')).toMatch(/round 1 of 2 started/)
   const reviewer = w.spawned[0]?.agentId ?? ''
 
   change(w, 'src/b.ts')
@@ -360,9 +360,10 @@ test('F6: a verdict for a tree the reviewer never read is discarded and does not
   const status = await devloop($, 'status')
   expect(status).toMatch(/\[ \] Independent review: not run/)
   expect(w.toasts.join(' ')).toMatch(/discarded/)
+  // Only settled rounds are counted there.
   expect(await devloop($, 'metrics')).toMatch(/review rounds: 0/)
-  // The next round is round 1 again.
-  expect(await devloop($, 'review')).toMatch(/round 1 of 3 started/)
+  // The discarded round counts toward the cap (rule 11): the next one is round 2.
+  expect(await devloop($, 'review')).toMatch(/round 2 of 2 started/)
 })
 
 test('a person exempts a path for one turn, and failures that repeat are surfaced', async ($, on) => {
@@ -966,7 +967,8 @@ test('devloop_blocked records the reason, tells the person, and lets the builder
 // ---------------------------------------------------------------- sessions
 
 test('F28: a reload keeps the session\'s state; a new session drops it; a review running too long is abandoned', async ($, on) => {
-  const w = world(on)
+  // Two rounds start here, and neither settles: with the default cap of 2 the second would spend it, which is not this test's subject.
+  const w = world(on, { ...CONFIG, maxReviewRounds: 3 })
   await start($)
   await edit($, '/repo/src/a.ts')
   change(w, 'src/a.ts')

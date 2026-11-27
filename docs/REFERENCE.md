@@ -886,7 +886,7 @@ error keeps the gate shut until it is fixed.
 | `forbidden` | `[]` | `[{ "pattern": "<regular expression>", "why": "<reason>" }]`: commands refused, with the reason the agent is given. The production actions above are built in. |
 | `network.allow` | not set (tripwire off) | Hosts shell commands may reach. Exact names; `*.example.com` allows subdomains. Loopback is always allowed. A malformed list allows no host. |
 | `maxFixRounds` | `2` | Blocked stops per prompt before the turn ends and you are told. Up to 10. |
-| `maxReviewRounds` | `3` | Review rounds before a person must read the change. Up to 10. |
+| `maxReviewRounds` | `2` | Review rounds in one review cycle before a person must read the change: one review and one check of the fix. A cycle that passes ends, and the next review starts again at round 1. Up to 10. |
 | `autoReview` | `true` | Start a review by itself when every feature passes and verification is green, when a shipping command is refused only because no review has run, and, once a round has failed and its findings went to the agent, at the next stop that verifies the fix (in every phase, within the round cap). |
 | `budgetUsd` | `null` | A cost cap per session, against a client-side estimate. |
 | `instructionMaxLines` | `200` | `/devloop doctor` flags instruction files longer than this. |

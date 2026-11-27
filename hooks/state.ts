@@ -282,7 +282,9 @@ export function brief(loop: Loop): string {
     if (loop.tier !== 'low') {
       // A verdict with a promoted checklist failure on its tree is a failing verdict wherever it is shown (final round, D2 F2).
       const isFailing = loop.review.status === 'pass' && (loop.checklistFails ?? []).some(one => one.tree !== null && one.tree === loop.review.tree)
-      parts.push(`review ${mark(isFailing ? 'fail' : loop.review.status)}`)
+      // A cycle that passed on another tree, its verdict reset by a verification of the moved tree: out of date (rule 15), as the gate's row says.
+      const isStale = loop.review.status === 'none' && loop.review.cycle.ended === 'pass' && loop.review.tree !== null && loop.review.tree !== loop.tree
+      parts.push(`review ${isStale ? 'stale' : mark(isFailing ? 'fail' : loop.review.status)}`)
     }
   }
 
@@ -312,7 +314,7 @@ export async function restore($: Engine, root: string, sessionId: string | null)
   const stored = (await $.store.get(`loop:${root}`)) as { shape?: string; value?: Loop } | undefined
   const base = upgraded(stored)
   // An upgraded loop is kept under this shape at once.
-  if (stored?.shape === PREVIOUS && stored.value !== undefined) {
+  if (stored?.value !== undefined && (stored.shape === PREVIOUS || (stored.shape === SHAPE && base !== stored.value))) {
     await $.store.set(`loop:${root}`, { shape: SHAPE, value: base })
   }
   const isReload = sessionId !== null && base.sessionId === sessionId
@@ -347,14 +349,29 @@ function upgraded(stored: { shape?: string; value?: Loop } | undefined): Loop {
     return FRESH
   }
   if (stored.shape === SHAPE) {
-    return stored.value
+    return withCycle(stored.value)
   }
   if (stored.shape !== PREVIOUS) {
     return FRESH
   }
   const before = stored.value as Omit<Loop, 'background' | 'verify'> & { verify: Omit<Loop['verify'], 'runs'> }
 
-  return { ...before, background: {}, verify: { ...before.verify, runs: {} } }
+  return withCycle({ ...before, background: {}, verify: { ...before.verify, runs: {} } })
+}
+
+/**
+ * A loop kept before review cycles (rule 5) given one: a review that passed
+ * ended its cycle with a pass, so the cap does not refuse the next round,
+ * and the tree of a round that settled is the one the next round reads from.
+ */
+function withCycle(loop: Loop): Loop {
+  const review = loop.review as Omit<Loop['review'], 'cycle'> & { cycle?: Loop['review']['cycle'] }
+  if (review.cycle !== undefined) {
+    return loop
+  }
+  const isSettled = review.status === 'pass' || review.status === 'fail'
+
+  return { ...loop, review: { ...review, cycle: { ...FRESH.review.cycle, ended: review.status === 'pass' ? 'pass' : null, settledTree: isSettled ? review.tree : null } } }
 }
 
 /** Marks a review abandoned when it has been `running` past its lifetime: its agent is not coming back. */
