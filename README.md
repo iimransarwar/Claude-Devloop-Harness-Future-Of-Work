@@ -37,26 +37,96 @@ leaves the merge to you.
 - **Checks before it answers.** Ask a question about the state of things and
   the agent is pushed to look at the source, not answer from memory.
 
-## Quick start
+## Requirements
 
-1. Install the plugin:
+| You need | For |
+| --- | --- |
+| [Claude Code](https://code.claude.com), kept up to date | Everything. devloop is a Claude Code plugin. |
+| Node 18 or later on your `PATH` | The hooks and the `devloop` command line. |
+| git | Reading the policy from your default branch, diffs and the push gate. |
+| Python 3.8 or later | Only the optional cache-guard. |
+| bun | Only to rebuild `dist/devloop.mjs` from source. |
 
-   ```
-   /plugin install devloop --marketplace youtube949/devloop
-   ```
+## Install
 
-2. In your project, run `/devloop init`. It writes `devloop.json`, your
-   project's policy, and suggests your test commands.
-3. Open `devloop.json` and check the `verify` list: these are the commands
-   that decide whether work is done.
-4. Commit `devloop.json` to your main branch. The policy is always read from
+This repository is its own plugin marketplace, named `devloop`, holding one
+plugin, also named `devloop`. Add the marketplace, then install the plugin.
+
+### From inside Claude Code
+
+Run these at the Claude Code prompt:
+
+```
+/plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work
+/plugin install devloop@devloop
+```
+
+Restart Claude Code so the hooks load.
+
+### From the terminal
+
+```bash
+claude plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work
+claude plugin install devloop@devloop
+```
+
+Or in one step, which adds the marketplace for you if it is not there yet:
+
+```bash
+claude plugin install devloop --marketplace iimransarwar/Claude-Devloop-Harness-Future-Of-Work
+```
+
+### For a whole team
+
+Install at project scope. The marketplace and the plugin are then declared
+in the repository's `.claude/settings.json`, so everyone who opens the
+project in Claude Code gets devloop:
+
+```bash
+claude plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work --scope project
+claude plugin install devloop@devloop --scope project
+```
+
+Commit `.claude/settings.json`.
+
+### From a local clone
+
+Use this to try changes to devloop itself:
+
+```bash
+git clone https://github.com/iimransarwar/Claude-Devloop-Harness-Future-Of-Work.git
+claude plugin marketplace add ./Claude-Devloop-Harness-Future-Of-Work
+claude plugin install devloop@devloop
+```
+
+### Check, update, remove
+
+```bash
+claude plugin list                          # devloop@devloop shows as enabled
+claude plugin marketplace update devloop    # fetch the latest from GitHub
+claude plugin update devloop@devloop        # then restart Claude Code
+claude plugin uninstall devloop@devloop
+```
+
+## Set up a project
+
+devloop does nothing to a repository until it opts in. Until then only the
+secrets guard and `/devloop init` are live.
+
+1. In your project, run `/devloop init`. It writes `devloop.json` (your
+   policy, in observe mode, with the default branch it finds), `REVIEW.md`,
+   `evals/README.md` and, if there is no `CLAUDE.md`, an `AGENTS.md`. It
+   never overwrites a file that exists, and it suggests test commands from
+   your `package.json`, `pyproject.toml`, `go.mod` or `Cargo.toml`.
+2. Open `devloop.json` and check the `verify` list: these are the commands
+   that decide whether work is done. If `init` found no test command the list
+   is empty, and nothing is checked until you add one.
+3. Commit `devloop.json` to your main branch. The policy is always read from
    there, so a change cannot loosen its own rules.
-5. Run `/devloop doctor` to see what is in force.
-6. When you are happy with what it reports, change `"mode": "observe"` to
+4. Run `/devloop doctor` to see what is in force.
+5. When you are happy with what it reports, change `"mode": "observe"` to
    `"mode": "enforce"`. In observe mode devloop only records what it would
-   have stopped.
-
-Requires Node 18 or later.
+   have stopped. Reading a secret file is refused in either mode.
 
 ## Everyday use
 
@@ -72,12 +142,43 @@ Just ask the agent for what you want. devloop works in the background.
 | `/devloop continue` | Let the agent keep going after the loop limit stopped it. |
 | `/devloop learn` | See the rules devloop has proposed from repeated failures. |
 | `/devloop library` | See the specs saved for reuse across your projects. |
+| `/devloop hooks install` | Add a pre-push git hook that refuses a push that is not green. |
 | `/devloop doctor` | Check the setup. |
 | `/devloop help` | Every command. |
 
 The agent may push a branch and open a pull request. Merging is yours.
 
-## Bigger work: start from a spec
+## How it works
+
+Every change goes the same way: guarded while the agent works, checked when
+it stops, reviewed before it ships, merged by a person.
+
+- **Small fix.** No spec. The guards and the stop check apply, and high-risk
+  paths cannot be edited.
+- **Spec, then build.** While a spec is written only the spec and its tests
+  can change. Once you approve it they lock, and the agent builds one feature
+  at a time against its check.
+- **Review.** Before a push lands, the gate runs the full checks and scans
+  the added lines for credentials. A separate read-only `reviewer` agent,
+  which never saw the conversation, reads the change and ends with PASS or
+  FAIL.
+- **Ready.** You read it, merge it, and close it with `/devloop done`.
+
+**Risk tiers.** A change is as risky as its riskiest file. It is `high` if
+it touches a file in `tiers.high`, a protected file or an instruction file,
+`low` if every file is in `tiers.low` and no test changed, and `medium`
+otherwise. A change larger than `blastRadius` moves up a tier. Medium and
+high changes need the independent review to ship.
+
+**Limits.** By default the agent gets 2 tries to fix a failing check
+(`maxFixRounds`) and 3 review rounds (`maxReviewRounds`). After 6 failed
+rounds on one branch (`loop.failedRounds`) it stops until you run
+`/devloop continue`.
+
+**Where the rules are enforced.** The same policy is enforced in more than
+one place, so a missing piece does not fail open: the plugin's hooks module,
+classic Claude Code hooks that run `dist/devloop.mjs`, and, if you want them,
+a pre-push git hook and CI.
 
 <p align="center">
   <img src="docs/images/spec-flow.svg" width="420" alt="The spec flow: you start a spec; the agent writes SPEC.md and one check per feature; the harness runs every check and flags one that already passes; you approve and the spec and tests lock; the agent builds one feature at a time and the harness runs that feature's check; when all pass the change goes through the normal loop.">
@@ -103,11 +204,56 @@ The agent may push a branch and open a pull request. Merging is yours.
 `fast` checks run every time the agent stops. `full` checks run before
 anything ships. `when` limits a check to the files it covers.
 
+## Outside Claude Code
+
+`dist/devloop.mjs` is the policy core as one dependency-free Node file. Run
+it from the plugin's folder against any repository with a `devloop.json`:
+
+```bash
+node dist/devloop.mjs gate                   # everything between this change and shipping
+node dist/devloop.mjs verify --profile fast  # just the checks
+node dist/devloop.mjs doctor                 # policy errors and lints
+node dist/devloop.mjs check-command 'git push --force'   # what the guards would say
+```
+
+Each takes `--json`. It exits 0 when green, 1 when not, and 2 on a usage or
+policy error. [docs/examples/devloop-gate.yml](docs/examples/devloop-gate.yml)
+runs the gate in GitHub Actions.
+
 ## Optional: cache-guard
 
 A status line that shows what Claude's prompt cache is saving you, warnings
 before moves that throw a warm cache away, and cost reports. Bundled, off by
 default, needs Python 3.8 or later. Turn it on with `/devloop cache install`.
+
+## What is in this repository
+
+| Path | What |
+| --- | --- |
+| `hooks/` | The harness: guards, the stop check, the gate, review, the ledger. |
+| `cli/`, `dist/devloop.mjs` | The command line, and its committed build. |
+| `agents/` | The read-only `reviewer` and the `learner` that proposes rules. |
+| `skills/spec/` | The skill that interviews you and writes a spec. |
+| `output-styles/` | `Lean`, an optional short-reply output style. |
+| `schemas/` | JSON schemas for the records devloop writes. |
+| `cache-guard/` | The bundled cache-guard. |
+| `docs/` | The reference, the design and the known limits. |
+| `tests/` | Unit, integration and smoke tests. |
+
+## Developing devloop
+
+From the repository root, with `bash`, `git`, `node` and `bun` installed:
+
+```bash
+tsc -p . --noUnusedLocals --noUnusedParameters
+claude plugin validate .
+claude plugin test .
+bash tests/smoke.sh
+```
+
+After changing `hooks/` or `cli/`, rebuild with `bash scripts/build.sh` and
+commit `dist/devloop.mjs`. The smoke test fails if the committed build
+differs from its sources.
 
 ## Learn more
 

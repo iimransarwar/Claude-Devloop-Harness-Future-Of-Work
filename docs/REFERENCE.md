@@ -25,8 +25,13 @@ writes of secret files and offers `/devloop init`.
 ## Install
 
 ```
-/plugin install devloop --marketplace youtube949/devloop
+/plugin marketplace add iimransarwar/Claude-Devloop-Harness-Future-Of-Work
+/plugin install devloop@devloop
 ```
+
+Restart Claude Code so the hooks load. The README covers installing from
+the terminal, at project scope for a team, from a local clone, and
+updating.
 
 Then, in the repository you want to work on:
 
