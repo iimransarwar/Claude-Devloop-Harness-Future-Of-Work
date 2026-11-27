@@ -66,7 +66,18 @@ function written(key: Exclude<RowKey, 'tests'>, value: string): unknown {
   return value
 }
 
-const dig = (raw: Obj, path: readonly string[]): unknown => path.reduce<unknown>((at, k) => (isObj(at) ? at[k] : undefined), raw)
+/** The deepest value of `devloop.json` along the path: a bad parent (`"learning": "yes"`) is shown as it is, not as undefined. */
+function dig(raw: Obj, path: readonly string[]): unknown {
+  let at: unknown = raw
+  for (const k of path) {
+    if (!isObj(at)) {
+      return at
+    }
+    at = at[k]
+  }
+
+  return at
+}
 
 const show = (v: unknown): string => (typeof v === 'string' ? v : (JSON.stringify(v) ?? 'undefined'))
 
@@ -133,6 +144,25 @@ export function readSettings(text: string): SettingsView | { error: string } {
   return { rows, verify }
 }
 
+/** What a set of changes writes, in the order given: the `verify` list, and each picked option the picker offers. */
+function writes(changes: Changes): { key: Exclude<RowKey, 'tests'> | 'verify'; value: string | readonly unknown[] }[] {
+  const out: { key: Exclude<RowKey, 'tests'> | 'verify'; value: string | readonly unknown[] }[] = []
+  for (const key of Object.keys(changes) as (keyof Changes)[]) {
+    if (key === 'verify') {
+      if (changes.verify !== undefined) {
+        out.push({ key, value: changes.verify })
+      }
+      continue
+    }
+    const value = changes[key]
+    if (key !== 'tests' && value !== undefined && written(key, value) !== undefined) {
+      out.push({ key, value })
+    }
+  }
+
+  return out
+}
+
 /** Sets only the changed keys in `devloop.json`'s text; untouched keys keep their order and value. */
 export function applyChanges(text: string, changes: Changes): string {
   const obj = parseObject(text)
@@ -140,22 +170,13 @@ export function applyChanges(text: string, changes: Changes): string {
     return text
   }
   let isChanged = false
-  for (const key of Object.keys(changes) as (keyof Changes)[]) {
+  for (const { key, value } of writes(changes)) {
     if (key === 'verify') {
-      if (changes.verify !== undefined) {
-        obj.verify = [...changes.verify]
-        isChanged = true
-      }
+      obj.verify = [...(value as readonly unknown[])]
+      isChanged = true
       continue
     }
-    const value = changes[key]
-    if (key === 'tests' || value === undefined) {
-      continue
-    }
-    const out = written(key, value)
-    if (out === undefined) {
-      continue
-    }
+    const out = written(key, value as string)
     const [top, leaf] = PICKERS[key].path
     if (top === undefined) {
       continue
@@ -169,6 +190,10 @@ export function applyChanges(text: string, changes: Changes): string {
     if (key === 'grounding' && value === 'same') {
       if (isObj(holder) && leaf in holder) {
         delete holder[leaf]
+        isChanged = true
+      } else if (!isObj(holder)) {
+        // An invalid value (not an object) is replaced, so the pick takes effect.
+        obj[top] = {}
         isChanged = true
       }
       continue
@@ -187,25 +212,15 @@ export function applyChanges(text: string, changes: Changes): string {
 
 /** The `devloop.json` key paths these changes write, in the order given. */
 export function changedKeys(changes: Changes): string[] {
-  const keys: string[] = []
-  for (const key of Object.keys(changes) as (keyof Changes)[]) {
-    if (key === 'verify') {
-      if (changes.verify !== undefined) {
-        keys.push('verify')
-      }
-      continue
-    }
-    const value = changes[key]
-    if (key !== 'tests' && value !== undefined && written(key, value) !== undefined) {
-      keys.push(PICKERS[key].path.join('.'))
-    }
-  }
-
-  return keys
+  return writes(changes).map(({ key }) => (key === 'verify' ? 'verify' : PICKERS[key].path.join('.')))
 }
 
 /** Says when a saved (or pending) change applies. */
-export function effectLine(base: string, baseHasPolicy: boolean, isSaved: boolean): string {
+export function effectLine(base: string, baseHasPolicy: boolean | null, isSaved: boolean): string {
+  if (baseHasPolicy === null) {
+    // Not known which copy governs: never claim "now".
+    return `${isSaved ? 'Saved to devloop.json. ' : ''}devloop will use these settings once they are in force.`
+  }
   if (!baseHasPolicy) {
     return isSaved ? 'Saved. devloop uses these settings now.' : 'devloop uses these settings now.'
   }

@@ -53,7 +53,7 @@ import { applyChanges, effectLine, readSettings } from './settings'
 import { SET_UP_HEADLINE } from './setup'
 import { barParts } from './statusbar'
 import {
-  SETTINGS_FOOTER, SETTINGS_LABEL, SETTINGS_OPEN, SETTINGS_PANE, changeTests, closeSettings, installGuard, isSettings, openedWithOf, pickSetting, pythonMissing, removeGuard, saveSettings, settingsCommand, unreadableOf,
+  SETTINGS_FOOTER, SETTINGS_LABEL, SETTINGS_OPEN, SETTINGS_PANE, absentOf, changeTests, closeSettings, installGuard, isSettings, openedWithOf, pickSetting, pythonMissing, removeGuard, saveSettings, settingsCommand, unreadableOf,
 } from './settingspane'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
@@ -2204,10 +2204,7 @@ export const register: Register = on => {
     )
   })
 
-  // The settings popup: a picker per setting from the working tree's
-  // devloop.json, the draft's picks over it, Save and Cancel. Drawing writes
-  // nothing and runs nothing; the draft is written from the handlers.
-    // The status row above the prompt: where the loop stands, in color, in one
+  // The status row above the prompt: where the loop stands, in color, in one
   // line. Drawing writes nothing; no row when there is nothing to show.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) {
@@ -2237,17 +2234,20 @@ export const register: Register = on => {
     )
   })
 
-on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
+  // The settings popup: a picker per setting from the working tree's
+  // devloop.json, the draft's picks over it, Save and Cancel. Drawing writes
+  // nothing and runs nothing; the draft is written from the handlers.
+  on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
     const { Box, Button, Select, Text } = $.ui.resolve(e)
     const at = await look($)
     const text = at.text
-    const view = text === null ? { error: 'devloop.json is not in this working tree' } : readSettings(text)
+    const view = text === null ? { error: '' } : readSettings(text)
     const cancel = <Button key="cancel" label="Cancel" onPress={() => closeSettings($)} />
     if (text === null || 'error' in view) {
       // Never written over: only Cancel.
       return (
         <Box flexDirection="column">
-          <Text color="error" wrap="wrap">{unreadableOf('error' in view ? view.error : '')}</Text>
+          <Text color="error" wrap="wrap">{text === null ? absentOf(heldPolicy(at)) : unreadableOf('error' in view ? view.error : '')}</Text>
           <Box>{cancel}</Box>
         </Box>
       )

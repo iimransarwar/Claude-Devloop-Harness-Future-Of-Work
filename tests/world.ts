@@ -443,7 +443,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
       if (e.argv[1] === '-c' && e.argv[2] === PYTHON_VERSION) {
         return answer(`${w.pythonVersion}\n`)
       }
-      if ((e.argv[1] ?? '').endsWith(`/${SCRIPT}`) && e.argv[2] === 'install') {
+      if ((e.argv[1] ?? '').endsWith(`/${SCRIPT}`) && (e.argv[2] === 'install' || e.argv[2] === 'uninstall')) {
         w.argvs.push([...e.argv])
         w.cacheInstalls.push(e.argv.slice(2))
 

@@ -1027,8 +1027,8 @@ and whether the task files validate), every time it is shown; with no fact
 the verdict covers only its own tree. A promoted checklist item that failed
 on the verdict's tree is shown, as its row, wherever the verdict carries
 ("failed on the reviewed tree <tree>, and the verdict carries here"), and
-makes the general review row unmet ("a failing verdict"); the status line
-reads `review FAILING`. A new round clears the previous verdict's
+makes the general review row unmet ("a failing verdict"); the status bar
+above the prompt reads `review ✗ changes asked`. A new round clears the previous verdict's
 checklist failures before its own are derived.
 
 *As built (final round, D1 F4):* **a push is allowed only when the
@@ -1372,7 +1372,8 @@ papercut groups, rule hits, prune's report, the cost meter),
 
 ### 4.10 Interface
 
-- Status line: one line, hidden when nothing is in progress.
+- Status bar: one colored line above the prompt (phase, tests, review, the gate
+  as a bar, risk), hidden when nothing is in progress.
 - Pane with tabs: **Gate** (rows, who approves), **Features**, **Activity**
   (recent events), **Metrics**. Buttons for verify, review, status.
 - Toasts only for things a person must act on.

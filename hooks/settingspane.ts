@@ -44,6 +44,17 @@ export const openedWithOf = (view: SettingsView): Record<RowKey, string> => Obje
 /** Why the popup cannot show devloop.json, as a person reads it. */
 export const unreadableOf = (error: string): string => `${error.replace(/; every field takes its default$/, '')}. Fix it by hand, then open settings again.`
 
+/** Why the popup has no devloop.json to show: only the base branch has one, or none is here. */
+export function absentOf(policy: { cfg: { defaultBranch: string }; source: string } | null): string {
+  if (policy?.source === 'base') {
+    const base = policy.cfg.defaultBranch
+
+    return `devloop.json is only on ${base}. Restore it to this working tree (git checkout ${base} -- devloop.json), then open settings again.`
+  }
+
+  return 'devloop.json is not in this working tree. Fix it by hand, then open settings again.'
+}
+
 /**
  * /devloop settings and /devloop-settings, a person's: where a policy
  * governs, opens the popup with a fresh draft (so a draft an Esc left is never
@@ -76,10 +87,10 @@ export async function settingsCommand($: Engine, e: CommandRunInput): Promise<Co
  * opened: a hand edit made while it was open never drops a pick.
  */
 export async function pickSetting($: Engine, key: Exclude<RowKey, 'tests'>, value: string, opened: Record<RowKey, string>): Promise<void> {
-  // Read afresh: the file may have changed since the popup drew it.
-  forget()
-  const at = await locate($).catch(() => null)
-  const view = at?.text == null ? null : readSettings(at.text)
+  // Read the file afresh, but leave the policy in force held: it says whether the base branch's copy governs.
+  const at = await look($).catch(() => null)
+  const text = at === null ? null : await $.fs.read(`${at.root}/devloop.json`).catch(() => null)
+  const view = text === null ? null : readSettings(text)
   const held = view !== null && 'rows' in view ? view.rows.find(row => row.key === key)?.current : undefined
   await updateSettingsDraft($, (draft): SettingsDraft => {
     const openedWith = draft?.openedWith ?? opened
@@ -114,10 +125,12 @@ export async function saveSettings($: Engine): Promise<void> {
   forget()
   const at = await locate($)
   // Checked again now, so the line below says what holds: the base branch's copy, when it has one, governs until this is committed.
-  const policy = (await policyInForce($, at).catch(() => null)) ?? heldPolicy(at)
+  // undefined: the check failed, so which copy governs is not known.
+  const found = await policyInForce($, at).catch(() => undefined)
+  const policy = found === undefined ? undefined : found ?? heldPolicy(at)
   const view = at.text === null ? null : readSettings(at.text)
   if (at.text === null || view === null || 'error' in view) {
-    $.ui.toast(`devloop: nothing was saved. ${unreadableOf(view !== null && 'error' in view ? view.error : 'devloop.json is not in this working tree')}`, { timeoutMs: 12_000 })
+    $.ui.toast(`devloop: nothing was saved. ${view !== null && 'error' in view ? unreadableOf(view.error) : absentOf(policy ?? null)}`, { timeoutMs: 12_000 })
 
     return
   }
@@ -134,9 +147,11 @@ export async function saveSettings($: Engine): Promise<void> {
     }
     // The next read sees the file just written, and the panes the policy in force found again.
     forget()
-    await locate($).then(fresh => policyInForce($, fresh)).catch(() => null)
+    const held = await locate($).then(fresh => policyInForce($, fresh)).catch(() => undefined)
     await audit($, at.root, 'settings-changed', SETTINGS_ACTOR, keys.join(', '), null)
-    said = effectLine(policy?.cfg.defaultBranch ?? DEFAULTS.defaultBranch, policy?.source === 'base', true)
+    // Judged by the policy found before the write, else after it; neither known says so rather than "now".
+    const known = policy === undefined ? held : policy
+    said = effectLine(known?.cfg.defaultBranch ?? DEFAULTS.defaultBranch, known === undefined ? null : known?.source === 'base', true)
   }
   await closeSettings($)
   if (said !== null) {

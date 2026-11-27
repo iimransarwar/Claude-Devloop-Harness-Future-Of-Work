@@ -53,6 +53,21 @@ describe('settings model', () => {
   test('changedKeys names devloop.json paths', () => {
     expect(changedKeys({ mode: 'enforce', learning: 'off', verify: [] })).toEqual(['mode', 'learning.auto', 'verify'])
   })
+  test('a bad parent shows the value it holds, not undefined', () => {
+    const view = readSettings('{"learning":"yes"}') as SettingsView
+    const row = view.rows.find(one => one.key === 'learning')
+    expect(row?.current).toBe('invalid')
+    expect(row?.options.at(-1)?.label).toBe('Invalid in devloop.json: yes')
+  })
+  test('Same as mode over a grounding that is not an object replaces it, and is listed', () => {
+    const text = '{"grounding":"bad","mode":"observe"}'
+    expect(changedKeys({ grounding: 'same' })).toEqual(['grounding.mode'])
+    expect(JSON.parse(applyChanges(text, { grounding: 'same' }))).toEqual({ grounding: {}, mode: 'observe' })
+  })
+  test('effectLine with the governing copy unknown never says now', () => {
+    expect(effectLine('main', null, false)).toBe('devloop will use these settings once they are in force.')
+    expect(effectLine('main', null, true)).toBe('Saved to devloop.json. devloop will use these settings once they are in force.')
+  })
   test('effectLine', () => {
     expect(effectLine('main', false, true)).toBe('Saved. devloop uses these settings now.')
     expect(effectLine('main', true, true)).toBe("Saved to devloop.json. devloop keeps using main's copy until you commit this change to main.")
@@ -254,5 +269,51 @@ describe('settings popup', () => {
     await ui.select({ key: 'row-mode', value: 'enforce' })
     await ui.press({ key: 'save' })
     expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').mode).toBe('enforce')
+  })
+  test('a pick keeps the base branch as the policy in force', async ($, on) => {
+    // Working copy observes; the base branch's copy enforces and governs.
+    const w = world(on, { verify: ['npm test'], mode: 'observe' }); w.basePolicy = JSON.stringify({ verify: ['npm test'], mode: 'enforce' })
+    await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT)
+    expect(await ui.find({ type: 'Text', text: /keeps using main's copy/ })).toBeDefined()
+    await ui.select({ key: 'row-learning', value: 'off' })
+    expect(await ui.find({ type: 'Text', text: /keeps using main's copy/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /uses these settings now/ })).toBeUndefined()
+  })
+  test('only on the base branch: Cancel only, and it says how to restore the file', async ($, on) => {
+    const w = world(on); w.basePolicy = JSON.stringify({ verify: ['npm test'], mode: 'enforce' }); delete w.files['/repo/devloop.json']
+    await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT)
+    expect(await ui.find({ type: 'Text', text: 'devloop.json is only on main. Restore it to this working tree (git checkout main -- devloop.json), then open settings again.' })).toBeDefined()
+    expect(await ui.find({ key: 'save' })).toBeUndefined()
+  })
+  test('cache-guard Remove runs uninstall after its own confirmation', async ($, on) => {
+    const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Uninstall it'
+    w.files[`${HOME}/.claude/cache-guard/config.json`] = '{}'
+    w.files[`${HOME}/.claude/settings.json`] = JSON.stringify({ statusLine: { type: 'command', command: `python3 "${HOME}/.claude/cache-guard/cache_guard.py" statusline` } })
+    await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'cache-remove' })
+    expect(w.cacheInstalls).toEqual([['uninstall']])
+  })
+  test('Change offers the detected commands, and picking them is saved', async ($, on) => {
+    const w = world(on); w.files['/repo/package.json'] = JSON.stringify({ scripts: { test: 'vitest' } }); w.answer = 'npm test --silent'
+    w.files['/repo/devloop.json'] = JSON.stringify({ verify: ['make check'], mode: 'enforce' })
+    await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'tests-change' })
+    expect(w.questions.length).toBeGreaterThan(0)
+    expect(await ui.find({ text: /• Tests/ })).toBeDefined()
+    await ui.press({ key: 'save' })
+    expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').verify).toEqual(['npm test --silent'])
+  })
+  test('Risky merges Custom is selected and left alone by a Save', async ($, on) => {
+    const w = world(on); w.files['/repo/devloop.json'] = JSON.stringify({ verify: ['npm test'], mode: 'enforce', approvals: { low: 0, medium: 2, high: 3 } })
+    await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT)
+    expect(await ui.find({ key: 'row-approvals' })).toMatchObject({ props: { value: 'custom' } })
+    expect(((await ui.find({ key: 'row-approvals' }))?.props.options as { label: string }[]).map(one => one.label)).toContain('Custom (as in devloop.json)')
+    await ui.select({ key: 'row-mode', value: 'observe' }); await ui.press({ key: 'save' })
+    const saved = JSON.parse(w.files['/repo/devloop.json'] ?? '{}')
+    expect(saved.mode).toBe('observe')
+    expect(saved.approvals).toEqual({ low: 0, medium: 2, high: 3 })
   })
 })
