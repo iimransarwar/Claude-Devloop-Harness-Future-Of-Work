@@ -9,7 +9,7 @@ type Color = 'success' | 'error' | 'warning' | 'subtle'
 
 export type BarParts = {
   phase: string
-  tests: { text: string; color: 'success' | 'error' | 'subtle' }
+  tests: { text: string; color: 'success' | 'error' | 'warning' | 'subtle' }
   review: { text: string; color: Color } | null
   gate: { met: number; total: number }
   risk: { text: string; color: 'success' | 'warning' | 'error' }
@@ -27,6 +27,7 @@ export function barParts(loop: Loop, cfg: Config, checks: readonly Check[]): Bar
       : `Building "${loop.spec ?? ''}" · ${passing}/${total} features`
   const status = loop.verify.status
   const tests: BarParts['tests'] = cfg.verify.length === 0 ? { text: 'not set', color: 'subtle' }
+    : status === 'pass' && loop.isDirty ? { text: 'not run since the last change', color: 'warning' }
     : status === 'pass' ? { text: '✓ passed', color: 'success' }
       : status === 'fail' ? { text: '✗ failing', color: 'error' }
         : status === 'error' ? { text: '! error', color: 'error' }

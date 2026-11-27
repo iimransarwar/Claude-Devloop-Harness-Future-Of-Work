@@ -25,6 +25,10 @@ test('small fix, tests passed in green, review not run dim, gate counts, risk co
   expect(p.gate).toEqual({ met: 1, total: 2 })
   expect(p.risk).toEqual({ text: 'high', color: 'error' })
 })
+test('a pass on an older tree is not shown as passed', () => {
+  const p = barParts({ ...FRESH, changed: CHANGED, isDirty: true, verify: PASSING } as Loop, { ...DEFAULTS, verify: [step('npm test')] }, [])!
+  expect(p.tests).toEqual({ text: 'not run since the last change', color: 'warning' })
+})
 test('no test command reads not set, not "not run"', () => {
   const p = barParts({ ...FRESH, changed: CHANGED } as Loop, { ...DEFAULTS, verify: [] }, [])!
   expect(p.tests).toEqual({ text: 'not set', color: 'subtle' })
