@@ -51,6 +51,7 @@ import { librarySpellings, searchCommand } from './librarycmd'
 import { ACTIONS, commandName, failureText, registerActions } from './actions'
 import { applyChanges, effectLine, readSettings } from './settings'
 import { SET_UP_HEADLINE } from './setup'
+import { barParts } from './statusbar'
 import {
   SETTINGS_FOOTER, SETTINGS_LABEL, SETTINGS_OPEN, SETTINGS_PANE, changeTests, closeSettings, installGuard, isSettings, openedWithOf, pickSetting, pythonMissing, removeGuard, saveSettings, settingsCommand, unreadableOf,
 } from './settingspane'
@@ -241,7 +242,7 @@ async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): 
   }
   const at = await locate($).catch(() => null)
   if (at !== null && at.isOptedIn) {
-    void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
+    void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop', backgroundColor: 'transparent' })).catch(() => undefined)
   }
 }
 
@@ -916,7 +917,7 @@ export const register: Register = on => {
     await registerActions($, at?.isOptedIn === true).catch(() => undefined)
     if (at !== null && at.isOptedIn) {
       if (e.isInteractive) {
-        void $.ui.open({ id: PANE, title: 'Dev loop' })
+        void $.ui.open({ id: PANE, title: 'Dev loop', backgroundColor: 'transparent' })
       }
       // A new model is the moment to re-run the evals and prune what the old one needed.
       const model = await $.session.model().catch(() => '')
@@ -2102,7 +2103,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>This repository is not set up for the loop.</Text>
-          <Text dimColor>Type /devloop to set it up.</Text>
+          <Text color="subtle">Type /devloop to set it up.</Text>
         </Box>
       )
     }
@@ -2126,37 +2127,37 @@ export const register: Register = on => {
       const theirs = Object.values(claims).filter(one => one.spec === loop.spec && now < one.until && seatOf(one) !== seat)
       const regressions = Object.entries(loop.regressions)
       body = [
-        loop.phase !== 'build' ? <Text dimColor>No approved spec: features are built against one (/devloop spec, then /devloop approve).</Text> : <Progress label="Features" value={passing} max={Math.max(1, total)} valueText={`${passing}/${total}`} />,
+        loop.phase !== 'build' ? <Text color="subtle">No approved spec: features are built against one (/devloop spec, then /devloop approve).</Text> : <Progress label="Features" value={passing} max={Math.max(1, total)} valueText={`${passing}/${total}`} />,
         ...Object.entries(loop.features).map(([id, one]) => (
-          <Text color={one.passes && one.tree === loop.tree ? undefined : 'warning'} wrap="truncate-end">
+          <Text color={one.passes && one.tree === loop.tree ? 'success' : 'warning'} wrap="truncate-end">
             {one.passes && one.tree === loop.tree ? '[x]' : '[ ]'} {id}{one.passes && one.tree !== loop.tree ? ' (passed on an earlier tree)' : theirs.some(each => each.feature === id) ? ` (claimed by ${theirs.find(each => each.feature === id)?.name ?? 'another session'})` : ready.includes(id) && !one.passes ? ' (ready)' : ''}
           </Text>
         )),
-        regressions.length > 0 && <Text dimColor>Regression checks: {regressions.filter(([, one]) => one.passes === true && one.tree === loop.tree).length}/{regressions.length} pass on this tree</Text>,
+        regressions.length > 0 && <Text color="subtle">Regression checks: {regressions.filter(([, one]) => one.passes === true && one.tree === loop.tree).length}/{regressions.length} pass on this tree</Text>,
       ]
     } else if (tab === 'findings') {
       const open = loop.findings.filter(one => one.status === 'open')
       body = [
         <Text bold>{open.length === 0 ? 'No open findings' : `${open.length} open finding${open.length === 1 ? '' : 's'}`}</Text>,
         ...open.slice(0, 12).map(one => (
-          <Text color={one.isBlocking ? 'warning' : undefined} wrap="truncate-end">
+          <Text color={one.isBlocking ? 'error' : undefined} wrap="truncate-end">
             {one.id} {one.severity} {one.file === '' ? '' : `${one.file}:${one.line} `}{one.problem}{one.route === 'decision' ? ' [yours to decide]' : ''}
           </Text>
         )),
-        loop.findings.some(one => one.status === 'resolved') && <Text dimColor>Resolved by a person: {loop.findings.filter(one => one.status === 'resolved').map(one => one.id).join(', ')}</Text>,
-        loop.review.summary !== null && <Text dimColor wrap="truncate-end">{loop.review.summary}</Text>,
+        loop.findings.some(one => one.status === 'resolved') && <Text color="subtle">Resolved by a person: {loop.findings.filter(one => one.status === 'resolved').map(one => one.id).join(', ')}</Text>,
+        loop.review.summary !== null && <Text color="subtle" wrap="truncate-end">{loop.review.summary}</Text>,
       ]
     } else if (tab === 'activity') {
       const recent = (await auditOf($, root).catch(() => [] as AuditEvent[])).slice(-5)
       // The failed rounds on this branch (DESIGN 4.16): what the loop limit counted, as last kept.
       const failedRounds = limitLines(loop.limit ?? NO_LIMIT, cfg)
       body = [
-        loop.events.length === 0 && <Text dimColor>Nothing yet.</Text>,
-        ...loop.events.slice(-8).map(event => <Text dimColor wrap="truncate-end">{event.kind}: {event.text}</Text>),
+        loop.events.length === 0 && <Text color="subtle">Nothing yet.</Text>,
+        ...loop.events.slice(-8).map(event => <Text color="subtle" wrap="truncate-end">{event.kind}: {event.text}</Text>),
         failedRounds.length > 0 && <Text bold>Failed rounds</Text>,
-        ...failedRounds.map(line => <Text dimColor wrap="truncate-end">{line}</Text>),
+        ...failedRounds.map(line => <Text color="subtle" wrap="truncate-end">{line}</Text>),
         recent.length > 0 && <Text bold>Audit trail</Text>,
-        ...recent.map(one => <Text dimColor wrap="truncate-end">{auditLine(one)}</Text>),
+        ...recent.map(one => <Text color="subtle" wrap="truncate-end">{auditLine(one)}</Text>),
       ]
     } else if (tab === 'metrics') {
       const computed = computeMetrics({
@@ -2167,13 +2168,13 @@ export const register: Register = on => {
     } else {
       body = [
         tier !== 'none' && <Text bold>{isShippable(loop, cfg, facts) ? 'Gate: green' : 'Gate: not green'}</Text>,
-        tier === 'none' && <Text dimColor>{loop.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
+        tier === 'none' && <Text color="subtle">{loop.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
         ...(tier === 'none' ? [] : checks.map(check => (
-          <Text color={check.isMet ? undefined : 'warning'} wrap="truncate-end">
+          <Text color={check.isMet ? 'success' : 'warning'} wrap="truncate-end">
             {check.isMet ? '[x]' : '[ ]'} {check.label}: {check.note}
           </Text>
         ))),
-        tier !== 'none' && <Text dimColor>Merge: {approvers(tier, cfg)}</Text>,
+        tier !== 'none' && <Text color="subtle">Merge: {approvers(tier, cfg)}</Text>,
         <Box>
           <Button key="verify" label="Verify" onPress={act('verify')} />
           <Text> </Text>
@@ -2187,18 +2188,18 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text bold>{loop.phase === 'idle' ? 'Small-fix mode' : `${loop.phase === 'spec' ? 'Writing spec' : 'Building'}: ${loop.spec ?? ''}`}</Text>
-        <Text dimColor>
+        <Text color="subtle">
           {modeInForce(at) === 'observe' ? 'observe mode (guards record, do not refuse) · ' : ''}
           {tier === 'none' ? 'no changes yet' : `${loop.changed.length} files changed · ${tier} risk`}
         </Text>
-        {errors.map(error => <Text color="warning" wrap="truncate-end">devloop.json: {error}</Text>)}
-        {loop.blocked !== null && <Text color="warning" wrap="truncate-end">Blocked: {loop.blocked.reason}</Text>}
+        {errors.map(error => <Text color="error" wrap="truncate-end">devloop.json: {error}</Text>)}
+        {loop.blocked !== null && <Text color="error" wrap="truncate-end">Blocked: {loop.blocked.reason}</Text>}
         {loop.evalRun !== null && <Text>Evals: {loop.evalRun.current === null ? 'between tasks' : `task ${loop.evalRun.current.id}, trial ${loop.evalRun.current.trial + 1}`}</Text>}
         <Box>
-          {tabs.map(([id, label]) => <Button key={`tab-${id}`} label={tab === id ? `[${label}]` : label} onPress={show(id)} />)}
+          {tabs.map(([id, label]) => <Button key={`tab-${id}`} label={tab === id ? `[${label}]` : label} onPress={show(id)}>{tab === id ? <Text bold color="suggestion">[{label}]</Text> : <Text>{label}</Text>}</Button>)}
         </Box>
         {body}
-        <Text dimColor wrap="truncate-end">{root}</Text>
+        <Text color="subtle" wrap="truncate-end">{root}</Text>
       </Box>
     )
   })
@@ -2206,7 +2207,37 @@ export const register: Register = on => {
   // The settings popup: a picker per setting from the working tree's
   // devloop.json, the draft's picks over it, Save and Cancel. Drawing writes
   // nothing and runs nothing; the draft is written from the handlers.
-  on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
+    // The status row above the prompt: where the loop stands, in color, in one
+  // line. Drawing writes nothing; no row when there is nothing to show.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) {
+      return next(e)
+    }
+    const loop = await loopOf($)
+    const at = await look($)
+    const policy = heldPolicy(at)
+    const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)))
+    if (parts === null) {
+      return next(e)
+    }
+    const { Box, Progress, Text } = $.ui.resolve(e)
+
+    return (
+      <Box>
+        <Text bold color="suggestion">devloop</Text>
+        <Text>  {parts.phase}  ·  tests </Text>
+        <Text color={parts.tests.color}>{parts.tests.text}</Text>
+        {parts.review !== null && <Text>  ·  review </Text>}
+        {parts.review !== null && <Text color={parts.review.color}>{parts.review.text}</Text>}
+        <Text>  ·  </Text>
+        <Progress label="gate" value={parts.gate.met} max={Math.max(1, parts.gate.total)} valueText={`${parts.gate.met}/${parts.gate.total}`} />
+        <Text>  ·  </Text>
+        <Text color={parts.risk.color}>{parts.risk.text}{parts.risk.text === 'no changes' ? '' : ' risk'}</Text>
+      </Box>
+    )
+  })
+
+on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
     const { Box, Button, Select, Text } = $.ui.resolve(e)
     const at = await look($)
     const text = at.text

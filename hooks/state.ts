@@ -288,13 +288,14 @@ export function brief(loop: Loop): string {
 }
 
 /**
- * Changes the loop's state, keeps it for the next session and redraws the
- * status line. Every write goes through here.
+ * Changes the loop's state, keeps it for the next session and clears
+ * any pinned status line. Every write goes through here.
  */
 export async function save($: Engine, root: string, change: (loop: Loop) => Loop): Promise<Loop> {
   const next = await update($, LOOP, loop => ({ ...change(loop), root }))
   await $.store.set(`loop:${root}`, { shape: SHAPE, value: next })
-  $.ui.status(next.phase === 'idle' && next.tier === 'none' ? undefined : `devloop: ${brief(next)}`)
+  // The status row is the AbovePrompt band; clear any line an earlier version pinned.
+  $.ui.status(undefined)
 
   return next
 }
