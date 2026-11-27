@@ -156,23 +156,26 @@ export function applyChanges(text: string, changes: Changes): string {
     if (out === undefined) {
       continue
     }
-    const path = PICKERS[key].path
-    if (path.length === 1) {
-      obj[path[0]] = out
+    const [top, leaf] = PICKERS[key].path
+    if (top === undefined) {
+      continue
+    }
+    if (leaf === undefined) {
+      obj[top] = out
       isChanged = true
       continue
     }
-    const holder = obj[path[0]]
+    const holder = obj[top]
     if (key === 'grounding' && value === 'same') {
-      if (isObj(holder) && path[1] in holder) {
-        delete holder[path[1]]
+      if (isObj(holder) && leaf in holder) {
+        delete holder[leaf]
         isChanged = true
       }
       continue
     }
     const inner: Obj = isObj(holder) ? holder : {}
-    inner[path[1]] = out
-    obj[path[0]] = inner
+    inner[leaf] = out
+    obj[top] = inner
     isChanged = true
   }
   if (!isChanged) {

@@ -210,4 +210,49 @@ describe('settings popup', () => {
     expect(texts.every(one => one.props.dimColor === undefined)).toBe(true)
     expect(texts.every(one => one.props.color === undefined || ['suggestion', 'error', 'subtle', 'text'].includes(one.props.color as string))).toBe(true)
   })
+  test('Change → Keep the current checks leaves the draft alone', async ($, on) => {
+    const w = world(on); w.answer = 'Keep the current checks'; await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'tests-change' })
+    expect(await ui.find({ text: /• Tests/ })).toBeUndefined()
+  })
+  test('Change → typed command replaces verify on Save', async ($, on) => {
+    const w = world(on); w.answer = 'make check'; await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'tests-change' })
+    expect(await ui.find({ text: /• Tests/ })).toBeDefined()
+    await ui.press({ key: 'save' })
+    expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').verify).toEqual(['make check'])
+  })
+  test('Change → None for now empties verify, only after Save', async ($, on) => {
+    const w = world(on); w.answer = 'None for now'; await start($); await devloop($, 'settings')
+    const before = w.files['/repo/devloop.json']
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'tests-change' })
+    expect(w.files['/repo/devloop.json']).toBe(before)
+    await ui.press({ key: 'save' })
+    expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').verify).toEqual([])
+  })
+  test('Change warns when it would replace scoped or full checks', async ($, on) => {
+    const w = world(on); w.files['/repo/devloop.json'] = JSON.stringify({ verify: ['a', { run: 'b', profile: 'full' }] }); w.answer = 'Keep the current checks'
+    await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'tests-change' })
+    expect(w.questions.at(-1)).toMatch(/This replaces your 2 checks, including ones that run before shipping or only for some files\./)
+  })
+  test('cache-guard Install asks its own confirmation and runs --all', async ($, on) => {
+    const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Install it'; await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'cache-install' })
+    expect(w.cacheInstalls).toEqual([['install', '--all']])
+  })
+  test('cache-guard Install declined changes nothing', async ($, on) => {
+    const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Leave it'; await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'cache-install' })
+    expect(w.cacheInstalls).toEqual([])
+  })
+  test('a pick is kept when devloop.json changed while the popup was open', async ($, on) => {
+    const w = world(on); await start($); await devloop($, 'settings')
+    const ui = await $.ui.mount(MOUNT)
+    // Opened on enforce; a hand edit makes it observe; picking enforce is now a change.
+    w.files['/repo/devloop.json'] = JSON.stringify({ ...JSON.parse(w.files['/repo/devloop.json'] ?? '{}'), mode: 'observe' })
+    await ui.select({ key: 'row-mode', value: 'enforce' })
+    await ui.press({ key: 'save' })
+    expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').mode).toBe('enforce')
+  })
 })
