@@ -137,6 +137,8 @@ export type World = {
   /** Each cache-guard installer run's argv after the script path, and its exit code. */
   cacheInstalls: string[][]
   cacheInstallExit: number
+  /** What the plugin logged to the person (`$.ui.log`). */
+  logs: string[]
   /** Whether the session's folder is a git work tree: false, the snapshot answers nothing and the git probe lists `gitSubfolders`. */
   isGit: boolean
   /** The snapshot script fails (exit 1, nothing printed) in a git repository: a null tree that is not "outside git". */
@@ -164,7 +166,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
     toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
     scriptArgs: {}, ignored: {}, capped: null, hold: null, onHeld: null, unreadable: [], toolErrors: [], hookEnv: {}, diffs: {}, committable: null, headTree: null, hidden: [], differs: [], argvs: [], isDiskListed: false,
-    setupAnswers: null, pythonVersion: null, cacheInstalls: [], cacheInstallExit: 0, isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null,
+    setupAnswers: null, pythonVersion: null, cacheInstalls: [], cacheInstallExit: 0, logs: [], isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null,
   }
   on('store.get', (_, e) => ({ value: w.store[e.key] }))
   on('store.set', (_, e) => {
@@ -236,7 +238,11 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     return { value: { isPlaced: true } }
   })
   on('ui.status', () => ({ value: undefined }))
-  on('ui.log', () => ({ value: undefined }))
+  on('ui.log', (_, e) => {
+    w.logs.push(JSON.stringify(e))
+
+    return { value: undefined }
+  })
   on('ui.toast', (_, e) => {
     w.toasts.push(e.text)
 

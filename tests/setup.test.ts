@@ -214,4 +214,10 @@ describe('guided setup on /devloop', () => {
     expect(await devloop($, 'cache install --all')).toBe('Nothing was changed.')
     expect(w.cacheInstalls).toEqual([])
   })
+  test('the intro does not name a number of questions', async ($, on) => {
+    const w = world(on, null); w.pythonVersion = '3.12'; await start($)
+    await devloop($, '')
+    expect(w.logs.join('\n')).toMatch(/isn't set up here yet/)
+    expect(w.logs.join('\n')).not.toMatch(/three questions/i)
+  })
 })

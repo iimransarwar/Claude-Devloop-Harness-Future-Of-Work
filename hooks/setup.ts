@@ -200,7 +200,7 @@ const CANCELLED = 'Setup cancelled. Nothing was written.'
 const NOT_GIT = "This folder isn't a git repository, so devloop can't see changes here."
 const OUTSIDE_GIT_LINE = 'devloop will only see files Claude edits here: no diffs, no credential scan, no push gate.'
 const INTRO =
-  "devloop isn't set up here yet. Once it is, it runs your tests each time Claude stops, has a second agent review changes before they ship, and keeps Claude off secrets and risky files. Three questions: Enter takes the recommended answer."
+  "devloop isn't set up here yet. Once it is, it runs your tests each time Claude stops, has a second agent review changes before they ship, and keeps Claude off secrets and risky files. A few questions: Enter takes the recommended answer."
 const STRICT_QUESTION = 'Watch only notes what devloop would have blocked and blocks nothing; Block from the start refuses what its rules forbid. How strict should it be to start?'
 const APPROVERS_QUESTION = 'A risky change needs a person to approve it before it merges; with Two people, someone working alone can never clear one. Who approves risky merges?'
 const OUTSIDE_GIT_QUESTION = `${NOT_GIT} It would only see files Claude edits: no diffs, no credential scan, no push gate. Set it up anyway?`
