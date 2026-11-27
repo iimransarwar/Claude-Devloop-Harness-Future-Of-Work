@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/handoff@1",
+  "title": "A handoff entry: the builder's narrative (or none) and the harness's facts",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "handoff@1"
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "by": {
+      "enum": [
+        "builder",
+        "person"
+      ]
+    },
+    "file": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "objective": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600
+    },
+    "nextStep": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600
+    },
+    "decisions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "deadEnds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "assumptions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "maxItems": 15
+    },
+    "facts": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "enum": [
+            "idle",
+            "spec",
+            "build"
+          ]
+        },
+        "spec": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 60
+        },
+        "tree": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "changed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "openFindings": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "phase",
+        "spec",
+        "tree",
+        "changed",
+        "openFindings"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "at",
+    "by",
+    "file",
+    "objective",
+    "nextStep",
+    "decisions",
+    "deadEnds",
+    "assumptions",
+    "files",
+    "facts"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/checklist@1",
+  "title": "A checklist: checkable statements about a kind of change, kept in checklists/<id>.json on the base branch (D2)",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "checklist@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,40}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "appliesTo": {
+      "type": "object",
+      "properties": {
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "maxItems": 20
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "maxItems": 40
+        },
+        "detect": {
+          "type": "string",
+          "maxLength": 400
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "maxItems": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,40}$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 400
+          },
+          "why": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 300
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "verify": {
+            "type": "object",
+            "properties": {
+              "by": {
+                "enum": [
+                  "pattern",
+                  "check",
+                  "review",
+                  "runtime",
+                  "person"
+                ]
+              },
+              "how": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 600
+              },
+              "pattern": {
+                "type": "string",
+                "maxLength": 400
+              },
+              "expect": {
+                "enum": [
+                  "present",
+                  "absent"
+                ]
+              },
+              "check": {
+                "type": "string",
+                "maxLength": 600
+              }
+            },
+            "required": [
+              "by",
+              "how"
+            ],
+            "additionalProperties": false
+          },
+          "naWhen": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 10
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "status": {
+            "enum": [
+              "active",
+              "retired"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "statement",
+          "why",
+          "severity",
+          "verify"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "title",
+    "appliesTo",
+    "maxItems",
+    "items"
+  ],
+  "additionalProperties": false
+}

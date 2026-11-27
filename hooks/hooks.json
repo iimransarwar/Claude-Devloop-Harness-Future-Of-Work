@@ -1,0 +1,22 @@
+{
+  "description": "devloop: the hooks module is the full harness; the classic hooks beside it are the second enforcement point (DESIGN 4.11). They stand down on every call, prompt and stop the module stamped, and hold the stateless core where it did not.",
+  "modules": ["./register.tsx"],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit|Read|Grep|Glob|Monitor",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/devloop.mjs\" hook PreToolUse", "timeout": 600 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/devloop.mjs\" hook UserPromptSubmit", "timeout": 60 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/devloop.mjs\" hook Stop", "timeout": 900 }]
+      }
+    ]
+  }
+}

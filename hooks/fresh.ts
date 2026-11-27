@@ -1,0 +1,47 @@
+// The loop as a change starts it: what the hooks module resets to, and what
+// the command line fills in from the tree to judge the gate with the same
+// rows. Pure: no `$`.
+
+import type { Loop } from '../types'
+
+export const FRESH: Loop = {
+  root: null,
+  sessionId: null,
+  phase: 'idle',
+  spec: null,
+  approvedHash: null,
+  features: {},
+  dependsOn: {},
+  approval: null,
+  testHashes: null,
+  newTests: [],
+  assertionDrops: [],
+  exemptionsUsed: [],
+  evidence: { tree: null, credentials: [], testsChanged: [], testsAdded: [], hidden: [] },
+  tree: null,
+  isBaseKnown: true,
+  isDirty: false,
+  changed: [],
+  hasTouchedTests: false,
+  tier: 'none',
+  size: { files: 0, lines: 0 },
+  verify: { status: 'none', rounds: 0, failed: null, at: 0, tree: null, profile: 'none', fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null },
+  review: { status: 'none', round: 0, agentId: null, isAuto: false, summary: null, at: 0, tree: null, agents: [], stalled: 0, isStalled: false, isLooping: false },
+  findings: [],
+  allow: [],
+  refusals: { rule: '', count: 0 },
+  blocked: null,
+  budgetUsd: null,
+  isOverBudget: false,
+  base: null,
+  events: [],
+  evalRun: null,
+  ignoredBase: null,
+  regressions: {},
+  tally: { startedAt: null, fixRounds: 0 },
+  agentWritten: [],
+  task: null,
+  checklistFails: [],
+  limit: { branch: null, failed: 0, grant: null, isTold: false, rounds: [], lastPass: null },
+  learner: { agentId: null, at: 0, groups: [], runs: 0 },
+}

@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/eval-result@1",
+  "title": "One eval task's result in one run (one pass of an ablation)",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "eval-result@1"
+    },
+    "run": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "pass": {
+      "enum": [
+        "main",
+        "baseline-1",
+        "baseline-2",
+        "without"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "full",
+        "quick"
+      ]
+    },
+    "task": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "taskHash": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "outcome": {
+      "enum": [
+        "pass",
+        "fail",
+        "infra"
+      ]
+    },
+    "trials": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "enum": [
+              "pass",
+              "fail",
+              "infra"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "calls": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "required": [
+          "outcome",
+          "note",
+          "calls",
+          "costUsd"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "successRate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "without": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "a hash of the devloop.json in force"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "harness": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "tree": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "suite": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "eval task id to the hash of its task file"
+        }
+      },
+      "required": [
+        "policy",
+        "model",
+        "harness",
+        "tree"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "run",
+    "pass",
+    "kind",
+    "task",
+    "taskHash",
+    "outcome",
+    "trials",
+    "successRate",
+    "without",
+    "at",
+    "inputs"
+  ],
+  "additionalProperties": false
+}

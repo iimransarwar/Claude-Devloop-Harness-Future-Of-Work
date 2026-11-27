@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/finding@1",
+  "title": "A review finding as the harness keeps it",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "finding@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^F\\d+$"
+    },
+    "reviewer": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "nit"
+      ]
+    },
+    "file": {
+      "type": "string",
+      "maxLength": 400
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "quote": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "problem": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "evidence": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "isPreExisting": {
+      "type": "boolean"
+    },
+    "route": {
+      "enum": [
+        "fix",
+        "decision",
+        "defer"
+      ]
+    },
+    "status": {
+      "enum": [
+        "open",
+        "closed",
+        "resolved",
+        "note",
+        "deferred"
+      ]
+    },
+    "isBlocking": {
+      "type": "boolean"
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "seen": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "reviewer",
+    "severity",
+    "file",
+    "line",
+    "quote",
+    "problem",
+    "evidence",
+    "isPreExisting",
+    "route",
+    "status",
+    "isBlocking",
+    "round",
+    "seen",
+    "note"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/papercut@1",
+  "title": "A friction report the agent filed",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "papercut@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^pc\\d+$"
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "group": {
+      "type": "string",
+      "pattern": "^p-[0-9a-f]{6}$"
+    },
+    "subject": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
+    },
+    "tried": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "expected": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "happened": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "suggestedFix": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "person",
+            "builder",
+            "agent",
+            "harness"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "at",
+    "group",
+    "subject",
+    "tried",
+    "expected",
+    "happened",
+    "suggestedFix",
+    "actor"
+  ],
+  "additionalProperties": false
+}

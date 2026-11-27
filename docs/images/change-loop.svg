@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 752" width="400" height="752" role="img" aria-label="Flow of one change: you ask, the agent edits inside the harness guard, the harness runs checks when the agent stops and sends failures back, the agent tries to push its branch, the gate and an independent reviewer decide before the push lands, findings go back to the agent, then the push goes through and you merge. After six failed rounds the harness stops the agent.">
+<title>Flow of one change: you ask, the agent edits inside the harness guard, the harness runs checks when the agent stops and sends failures back, the agent tries to push its branch, the gate and an independent reviewer decide before the push lands, findings go back to the agent, then the push goes through and you merge. After six failed rounds the harness stops the agent.</title>
+<style>
+  svg { --bg: #f5f7fa; --surface: #ffffff; --fg: #18212f; --muted: #586478;
+    --you-bg: #fcefd2; --you-line: #a96f14; --agent-bg: #dde9fc; --agent-line: #2b62c4;
+    --harness-bg: #d9f2ea; --harness-line: #1a7a63; --rev-bg: #ebe2fa; --rev-line: #6d41bb;
+    --stop: #bf362e; --stop-bg: #fbe4e1; }
+  @media (prefers-color-scheme: dark) { svg { --bg: #11151c; --surface: #19202a; --fg: #e5e9f0; --muted: #9ba6b7;
+    --you-bg: #3a2d10; --you-line: #e0a84a; --agent-bg: #15284a; --agent-line: #70a2f3;
+    --harness-bg: #10352d; --harness-line: #51c4a6; --rev-bg: #2a1f45; --rev-line: #aa8dec;
+    --stop: #f1766d; --stop-bg: #3d1a17; } }
+  text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); }
+  .ground { fill: var(--bg); }
+  .t { font-size: 13px; font-weight: 600; }
+  .s { font-size: 11px; fill: var(--muted); }
+  .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; fill: var(--muted); }
+  .lbl { font-size: 11px; fill: var(--muted); }
+  .cap { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; fill: var(--harness-line); }
+  .fl { font-size: 10.5px; fill: var(--stop); font-weight: 500; }
+  .n { stroke-width: 1.5; }
+  .you { fill: var(--you-bg); stroke: var(--you-line); }
+  .agent { fill: var(--agent-bg); stroke: var(--agent-line); }
+  .harness { fill: var(--harness-bg); stroke: var(--harness-line); }
+  .rev { fill: var(--rev-bg); stroke: var(--rev-line); }
+  .plain { fill: var(--surface); stroke: var(--muted); }
+  .guard { fill: none; stroke: var(--harness-line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .a { stroke: var(--fg); stroke-width: 1.5; fill: none; }
+  .ah { fill: var(--fg); }
+  .f { stroke: var(--stop); stroke-width: 1.5; fill: none; }
+  .fh { fill: var(--stop); }
+  .pill { fill: var(--stop-bg); stroke: var(--stop); stroke-width: 1.5; }
+  .pt { font-size: 10.5px; font-weight: 600; fill: var(--stop); }
+  .br { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  .cut { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+  .bt { font-size: 12px; font-weight: 600; }
+</style>
+<rect class="ground" x="0" y="0" width="400" height="752" rx="8"/>
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+            <marker id="fh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="fh" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+
+          <rect class="n you" x="16" y="10" width="220" height="48" rx="6"/>
+          <text class="t" x="28" y="31">You ask for a change</text>
+          <text class="s" x="28" y="47">a prompt, in the project</text>
+          <line class="a" x1="126" y1="58" x2="126" y2="121" marker-end="url(#ah)"/>
+          <text class="lbl" x="136" y="80">harness adds what changed</text>
+
+          <rect class="guard" x="6" y="96" width="240" height="118" rx="8"/>
+          <rect x="14" y="90" width="98" height="13" class="ground"/>
+          <text class="cap" x="18" y="100">HARNESS GUARD</text>
+          <rect class="n agent" x="16" y="122" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="144">Agent edits the code</text>
+          <text class="s" x="28" y="161">one concern per change</text>
+          <text class="s" x="18" y="191">judges every edit and command first:</text>
+          <text class="s" x="18" y="205">no secrets, locked files or repo wipes</text>
+
+          <line class="a" x1="126" y1="214" x2="126" y2="249" marker-end="url(#ah)"/>
+          <text class="lbl" x="136" y="236">agent stops</text>
+
+          <rect class="n harness" x="16" y="250" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="272">Runs the checks</text>
+          <text class="s" x="28" y="289">only those covering changed files</text>
+          <polyline class="f" points="236,276 310,276 310,162 237,162" marker-end="url(#fh)"/>
+          <text class="fl" x="273" y="270" text-anchor="middle">fails</text>
+          <text class="fl" x="273" y="291" text-anchor="middle">2 tries max</text>
+
+          <line class="a" x1="126" y1="302" x2="126" y2="337" marker-end="url(#ah)"/>
+          <text class="lbl" x="136" y="324">pass</text>
+
+          <rect class="n agent" x="16" y="338" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="360">Agent tries to push</text>
+          <text class="m" x="28" y="377">git push -u origin HEAD</text>
+          <line class="a" x1="126" y1="390" x2="126" y2="425" marker-end="url(#ah)"/>
+
+          <rect class="n harness" x="16" y="426" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="448">Gate</text>
+          <text class="s" x="28" y="465">full checks, no secrets in the diff</text>
+          <line class="a" x1="126" y1="478" x2="126" y2="513" marker-end="url(#ah)"/>
+          <text class="lbl" x="136" y="500">code changed (not docs only)</text>
+
+          <rect class="n rev" x="16" y="514" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="536">Independent review</text>
+          <text class="s" x="28" y="553">a fresh agent, read-only</text>
+          <polyline class="f" points="236,540 384,540 384,140 237,140" marker-end="url(#fh)"/>
+          <text class="fl" x="310" y="533" text-anchor="middle">findings to fix</text>
+          <text class="fl" x="310" y="555" text-anchor="middle">3 rounds max</text>
+
+          <rect class="pill" x="296" y="205" width="100" height="22" rx="11"/>
+          <text class="pt" x="346" y="220" text-anchor="middle">stops at 6 fails</text>
+
+          <line class="a" x1="126" y1="566" x2="126" y2="601" marker-end="url(#ah)"/>
+          <text class="lbl" x="136" y="588">pass</text>
+
+          <rect class="n agent" x="16" y="602" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="624">Push goes through</text>
+          <text class="s" x="28" y="641">the agent may open a pull request</text>
+          <line class="a" x1="126" y1="654" x2="126" y2="689" marker-end="url(#ah)"/>
+
+          <rect class="n you" x="16" y="690" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="712">You read it and merge</text>
+          <text class="s" x="28" y="729">/devloop done closes the change</text>
+        </svg>

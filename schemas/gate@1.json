@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/gate@1",
+  "title": "The gate as it was judged at one moment",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "gate@1"
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "why": {
+      "enum": [
+        "gate-command",
+        "shipping",
+        "shipped",
+        "done"
+      ]
+    },
+    "tier": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "isGreen": {
+      "type": "boolean"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "isMet": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 600
+          }
+        },
+        "required": [
+          "label",
+          "isMet",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "a hash of the devloop.json in force"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "harness": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "tree": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "suite": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "eval task id to the hash of its task file"
+        }
+      },
+      "required": [
+        "policy",
+        "model",
+        "harness",
+        "tree"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "at",
+    "why",
+    "tier",
+    "isGreen",
+    "rows",
+    "inputs"
+  ],
+  "additionalProperties": false
+}

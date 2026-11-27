@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 590" width="400" height="590" role="img" aria-label="Spec flow: you start a spec, the agent writes the spec and one check per feature, the harness runs every check to see it fail, you approve and the spec and tests lock, the agent builds one feature at a time and the harness runs that feature's check and records the pass, repeating until all pass, then the change goes through the normal loop.">
+<title>Spec flow: you start a spec, the agent writes the spec and one check per feature, the harness runs every check to see it fail, you approve and the spec and tests lock, the agent builds one feature at a time and the harness runs that feature's check and records the pass, repeating until all pass, then the change goes through the normal loop.</title>
+<style>
+  svg { --bg: #f5f7fa; --surface: #ffffff; --fg: #18212f; --muted: #586478;
+    --you-bg: #fcefd2; --you-line: #a96f14; --agent-bg: #dde9fc; --agent-line: #2b62c4;
+    --harness-bg: #d9f2ea; --harness-line: #1a7a63; --rev-bg: #ebe2fa; --rev-line: #6d41bb;
+    --stop: #bf362e; --stop-bg: #fbe4e1; }
+  @media (prefers-color-scheme: dark) { svg { --bg: #11151c; --surface: #19202a; --fg: #e5e9f0; --muted: #9ba6b7;
+    --you-bg: #3a2d10; --you-line: #e0a84a; --agent-bg: #15284a; --agent-line: #70a2f3;
+    --harness-bg: #10352d; --harness-line: #51c4a6; --rev-bg: #2a1f45; --rev-line: #aa8dec;
+    --stop: #f1766d; --stop-bg: #3d1a17; } }
+  text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); }
+  .ground { fill: var(--bg); }
+  .t { font-size: 13px; font-weight: 600; }
+  .s { font-size: 11px; fill: var(--muted); }
+  .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; fill: var(--muted); }
+  .lbl { font-size: 11px; fill: var(--muted); }
+  .cap { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; fill: var(--harness-line); }
+  .fl { font-size: 10.5px; fill: var(--stop); font-weight: 500; }
+  .n { stroke-width: 1.5; }
+  .you { fill: var(--you-bg); stroke: var(--you-line); }
+  .agent { fill: var(--agent-bg); stroke: var(--agent-line); }
+  .harness { fill: var(--harness-bg); stroke: var(--harness-line); }
+  .rev { fill: var(--rev-bg); stroke: var(--rev-line); }
+  .plain { fill: var(--surface); stroke: var(--muted); }
+  .guard { fill: none; stroke: var(--harness-line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .a { stroke: var(--fg); stroke-width: 1.5; fill: none; }
+  .ah { fill: var(--fg); }
+  .f { stroke: var(--stop); stroke-width: 1.5; fill: none; }
+  .fh { fill: var(--stop); }
+  .pill { fill: var(--stop-bg); stroke: var(--stop); stroke-width: 1.5; }
+  .pt { font-size: 10.5px; font-weight: 600; fill: var(--stop); }
+  .br { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  .cut { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+  .bt { font-size: 12px; font-weight: 600; }
+</style>
+<rect class="ground" x="0" y="0" width="400" height="590" rx="8"/>
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+          <rect class="n you" x="16" y="10" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="32">You start a spec</text>
+          <text class="m" x="28" y="49">/devloop spec login</text>
+          <line class="a" x1="126" y1="62" x2="126" y2="95" marker-end="url(#ah2)"/>
+
+          <rect class="n agent" x="16" y="96" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="118">Agent writes the spec</text>
+          <text class="s" x="28" y="135">SPEC.md + one check per feature</text>
+          <text class="lbl" x="250" y="118">only the spec</text>
+          <text class="lbl" x="250" y="132">and tests can</text>
+          <text class="lbl" x="250" y="146">change here</text>
+          <line class="a" x1="126" y1="148" x2="126" y2="181" marker-end="url(#ah2)"/>
+
+          <rect class="n harness" x="16" y="182" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="204">Runs every check first</text>
+          <text class="s" x="28" y="221">one that passes already is flagged</text>
+          <line class="a" x1="126" y1="234" x2="126" y2="267" marker-end="url(#ah2)"/>
+
+          <rect class="n you" x="16" y="268" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="290">You approve</text>
+          <text class="m" x="28" y="307">/devloop approve</text>
+          <text class="lbl" x="250" y="290">spec and tests</text>
+          <text class="lbl" x="250" y="304">are now locked</text>
+          <line class="a" x1="126" y1="320" x2="126" y2="353" marker-end="url(#ah2)"/>
+
+          <rect class="n agent" x="16" y="354" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="376">Agent builds one feature</text>
+          <text class="s" x="28" y="393">approved tests stay locked</text>
+          <line class="a" x1="126" y1="406" x2="126" y2="439" marker-end="url(#ah2)"/>
+
+          <rect class="n harness" x="16" y="440" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="462">Runs that feature's check</text>
+          <text class="s" x="28" y="479">the harness records the pass</text>
+          <polyline class="a" points="236,466 330,466 330,380 237,380" marker-end="url(#ah2)"/>
+          <text class="lbl" x="340" y="418">next</text>
+          <text class="lbl" x="340" y="432">feature</text>
+
+          <line class="a" x1="126" y1="492" x2="126" y2="525" marker-end="url(#ah2)"/>
+          <text class="lbl" x="136" y="513">all features pass</text>
+
+          <rect class="n plain" x="16" y="526" width="220" height="52" rx="6"/>
+          <text class="t" x="28" y="548">The loop above</text>
+          <text class="s" x="28" y="565">review, push, you merge</text>
+        </svg>

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/library-entry@1",
+  "title": "One spec in the spec library: entry.json in its folder, and (without the criteria) a line of the library's index.jsonl (DESIGN 4.18)",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "library-entry@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+--[A-Za-z0-9._-]+--\\d{4}-\\d{2}-\\d{2}$",
+      "maxLength": 200,
+      "description": "the entry's folder: <project>--<spec name>--<yyyy-mm-dd>"
+    },
+    "project": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "spec": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 80
+    },
+    "size": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 20
+    },
+    "related": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "maxItems": 20
+    },
+    "intent": {
+      "type": "string",
+      "maxLength": 400
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 600
+      },
+      "maxItems": 40,
+      "description": "the acceptance criteria, text only: in entry.json, never in the index"
+    },
+    "features": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "check": {
+            "type": "string",
+            "maxLength": 600
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "check"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "approvedAt": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "closedAt": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "milliseconds since the epoch; null while the change is open"
+    },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "closed",
+            "open"
+          ]
+        },
+        "isAllPassing": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "closed with every feature passing; null while open"
+        },
+        "reviewRounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "defects": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "escaped defects recorded later against the change"
+        }
+      },
+      "required": [
+        "status",
+        "isAllPassing",
+        "reviewRounds",
+        "defects"
+      ],
+      "additionalProperties": false
+    },
+    "harness": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "hash": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "a hash of SPEC.md and features.json as copied"
+    },
+    "savedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "removedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "set on the index line that marks the entry removed"
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "project",
+    "spec",
+    "kind",
+    "size",
+    "related",
+    "intent",
+    "features",
+    "approvedAt",
+    "closedAt",
+    "outcome",
+    "harness",
+    "hash",
+    "savedAt"
+  ],
+  "additionalProperties": false
+}

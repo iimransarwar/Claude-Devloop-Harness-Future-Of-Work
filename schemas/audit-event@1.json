@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/audit-event@1",
+  "title": "One action that changed what may ship",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "audit-event@1"
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "action": {
+      "enum": [
+        "spec-approved",
+        "spec-reopened",
+        "exemption-granted",
+        "change-closed",
+        "review-verdict",
+        "finding-resolved",
+        "refusal",
+        "policy-error",
+        "budget-set",
+        "regression-dropped",
+        "rule-tombstoned",
+        "papercut-closed",
+        "defect-recorded",
+        "eval-adopted",
+        "eval-started",
+        "shipped-ungated",
+        "record-invalid",
+        "handoff-exported",
+        "module-skipped",
+        "module-absent",
+        "git-hook-installed",
+        "git-hook-removed",
+        "evidence-noted",
+        "claim-taken",
+        "claim-lapsed",
+        "claim-takeover",
+        "claim-released",
+        "followup-stopped",
+        "checklist-promoted",
+        "checklist-demoted",
+        "checklist-adjudicated",
+        "cache-guard-installed",
+        "cache-guard-removed",
+        "harness-state-changed",
+        "answer-unchecked",
+        "loop-limit",
+        "loop-continued",
+        "learned-rule-promoted",
+        "learned-rule-dropped",
+        "library-saved",
+        "library-save-stopped",
+        "library-path-set",
+        "library-removed"
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "person",
+            "builder",
+            "agent",
+            "harness"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "subject": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "tree": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 80
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 600
+    }
+  },
+  "required": [
+    "schema",
+    "at",
+    "action",
+    "actor",
+    "subject",
+    "tree",
+    "detail"
+  ],
+  "additionalProperties": false
+}

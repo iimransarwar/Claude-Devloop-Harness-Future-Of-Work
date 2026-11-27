@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/evidence@2",
+  "title": "Portable evidence of a review, as a git note on the reviewed commit (refs/notes/devloop): a record, not a signature",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "evidence@2"
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "why": {
+      "enum": [
+        "review",
+        "done"
+      ]
+    },
+    "tree": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "the committable tree the evidence covers, equal to the commit's tree"
+    },
+    "full": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "the full tree verified, ignored instruction files included"
+    },
+    "head": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "policy": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "a hash of the devloop.json in force"
+    },
+    "checks": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "tree": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "run",
+          "tree"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reviewers": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "mode": {
+            "enum": [
+              "general",
+              "blocking",
+              "shadow"
+            ]
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "mode",
+          "verdict",
+          "round"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "open": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "checklistFails": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "maxItems": 60,
+      "description": "promoted checklist items that failed on the reviewed tree (list/item): the round is a failing one wherever this note is read"
+    },
+    "harness": {
+      "type": "string",
+      "maxLength": 40
+    }
+  },
+  "required": [
+    "schema",
+    "at",
+    "why",
+    "tree",
+    "head",
+    "policy",
+    "checks",
+    "reviewers",
+    "open",
+    "checklistFails",
+    "harness"
+  ],
+  "additionalProperties": false
+}

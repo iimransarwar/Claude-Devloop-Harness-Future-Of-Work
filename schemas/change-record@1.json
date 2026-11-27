@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/change-record@1",
+  "title": "A closed change, written at /devloop done",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "change-record@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^C\\d+$"
+    },
+    "closedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "startedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "spec": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 60
+    },
+    "task": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
+    },
+    "tier": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "tierWhy": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "maxItems": 20
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "maxItems": 2000
+    },
+    "lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fixRounds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reviewRounds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "isFirstPass": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "vacuous": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "maxItems": 100
+    },
+    "exemptionsUsed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "maxItems": 100
+    },
+    "findings": {
+      "type": "object",
+      "properties": {
+        "blocking": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deferred": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolvedByPerson": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "blocking",
+        "deferred",
+        "resolvedByPerson"
+      ],
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "isGreen": {
+          "type": "boolean"
+        },
+        "unmet": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "maxItems": 40
+        }
+      },
+      "required": [
+        "isGreen",
+        "unmet"
+      ],
+      "additionalProperties": false
+    },
+    "costUsd": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "an estimate"
+    },
+    "cacheHitRate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "attestation": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "by": {
+          "const": "person"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "milliseconds since the epoch"
+        },
+        "read": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "diff",
+              "tests",
+              "instructions"
+            ]
+          },
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "by",
+        "at",
+        "read"
+      ],
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "a hash of the devloop.json in force"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "harness": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "tree": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "suite": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "eval task id to the hash of its task file"
+        }
+      },
+      "required": [
+        "policy",
+        "model",
+        "harness",
+        "tree"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "closedAt",
+    "startedAt",
+    "durationMs",
+    "spec",
+    "tier",
+    "tierWhy",
+    "files",
+    "lines",
+    "fixRounds",
+    "reviewRounds",
+    "isFirstPass",
+    "vacuous",
+    "exemptionsUsed",
+    "findings",
+    "gate",
+    "costUsd",
+    "cacheHitRate",
+    "attestation",
+    "inputs"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,36 @@
+# An example GitHub Actions workflow that runs the devloop gate in CI.
+# Not active in this repository: copy it to .github/workflows/ in a
+# repository that opted in (devloop.json), and put dist/devloop.mjs where
+# the run step names it (vendored, or fetched from a pinned release).
+#
+# The gate is stateless: it finds the base, reads the base branch's
+# devloop.json whole, runs its fast and full checks for the change, and
+# proves the rows the plugin's gate shows. A review row is met only by a git
+# note (refs/notes/devloop) that names the very tree being judged; CI still
+# recomputes every check. A note is a record, not a signature.
+name: devloop gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the base branch, to find where the change left it
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch the base branch and the evidence notes
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          git fetch --no-tags origin refs/notes/devloop:refs/notes/devloop || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Install whatever the verify checks in devloop.json need here (npm ci, ...).
+      - name: devloop gate
+        run: node tools/devloop/devloop.mjs gate

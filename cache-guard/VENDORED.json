@@ -1,0 +1,24 @@
+{
+  "name": "cache-guard",
+  "source": "https://github.com/iimransarwar/cache-guard-for-claude",
+  "commit": "5a37bf0c1ff61f5a26eb8e6807901eadc06d1244",
+  "version": "2.6.0",
+  "license": "Apache-2.0",
+  "vendored": "2026-11-26",
+  "files": {
+    "README.md": "567f90c3ccd788207b36c48f4734fff1d8792f3a8d6f582d4de43acdc01955b7",
+    "cache_guard.py": "12b6394c5aba0a4b07b14389849514ac0baa3ec3319248abda17736ce3fac863",
+    "docs/superpowers/plans/2026-11-24-all-projects-line.md": "933738f1a5f2b8ca9d35d9fe815f499d4983a1f00c745ecf1cfa80eaf5d699fc",
+    "docs/superpowers/specs/2026-11-24-all-projects-line-design.md": "9e90bfe6b81779890b4b022beca0c8f24b476f4362480dc63efc21f21bc80dbe",
+    "docs/superpowers/specs/2026-11-24-keepwarm-design.md": "0ca1932958d2d479b786cd3e47902fe6defce6d6ee50156c0220131d2906fe31",
+    "docs/superpowers/specs/2026-11-24-limits-meter-subagents-design.md": "514fcd427e7f9a27fb2171ac0261d65912e29a918717ed9196140b97f07dda34",
+    "docs/superpowers/specs/2026-11-24-pace-budget-doctor-design.md": "44206da7ae6736cd20ad088f3ce8325a2bb4035402d956ab971bd77cde1a4479",
+    "docs/superpowers/specs/2026-11-25-handoff-design.md": "ac3b4ea5c613febc681f6f46b6afd5745ed03874671137ed1dffdbdf9f534103",
+    "lean.md": "b31094eea45ef90997a878a31ba2308e20d1b6a2f50c5346d9bea31f569862d8",
+    "tests/test_cache_guard.py": "359a954ef1b6af656550d783ca1b9931d0c38b027f91f76c627217344f57f71b"
+  },
+  "added": {
+    "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "NOTICE.md": "be9277c949d902b923d9a296677fdcbe5c32936ae9a365db9d44c8ba1a731f06"
+  }
+}

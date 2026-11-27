@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devloop/checklist-result@1",
+  "title": "One checklist item's result on one tree: by the harness (pattern, check) or the checklist reviewer (review) (D2)",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "checklist-result@1"
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "milliseconds since the epoch"
+    },
+    "list": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,40}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "item": {
+      "type": "string",
+      "maxLength": 41
+    },
+    "by": {
+      "enum": [
+        "pattern",
+        "check",
+        "review",
+        "runtime",
+        "person"
+      ]
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "na",
+        "unverified"
+      ]
+    },
+    "evidence": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "tree": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 80
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "enum": [
+        "harness",
+        "reviewer"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "at",
+    "list",
+    "version",
+    "item",
+    "by",
+    "status",
+    "evidence",
+    "tree",
+    "round",
+    "source"
+  ],
+  "additionalProperties": false
+}

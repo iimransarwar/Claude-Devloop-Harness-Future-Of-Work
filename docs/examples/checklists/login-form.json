@@ -1,0 +1,100 @@
+{
+  "schema": "checklist@1",
+  "id": "login-form",
+  "version": 1,
+  "title": "Sign-in form",
+  "appliesTo": {
+    "surfaces": ["login", "sign-in"],
+    "paths": ["**/login/**", "**/signin/**", "**/auth/**/*.tsx", "**/*SignIn*.*"],
+    "detect": "type=[\"']password[\"']"
+  },
+  "maxItems": 14,
+  "items": [
+    {
+      "id": "named-fields",
+      "statement": "The username and password fields each carry an accessible name from a label element tied to them by id, or from aria-labelledby; placeholder text is not counted as a name.",
+      "why": "A field without a name is announced as an unlabelled edit box, and a placeholder vanishes as soon as typing starts.",
+      "severity": "high",
+      "verify": { "by": "review", "how": "For each of the two inputs, quote the label (or aria-labelledby target) whose for/id pairing names it. An input whose only text is a placeholder answers fail." },
+      "naWhen": ["the form has no text input (single sign-on button only)"]
+    },
+    {
+      "id": "autocomplete",
+      "statement": "The identifier input declares autocomplete=\"username\" (or \"email\") and the password input autocomplete=\"current-password\".",
+      "why": "Password managers fill and save credentials only when the purpose of each field is declared.",
+      "severity": "high",
+      "verify": { "by": "pattern", "how": "The harness searches the changed files for a current-password autocomplete value; absent is a fail.", "pattern": "autoComplete=[\"']current-password[\"']|autocomplete=[\"']current-password[\"']", "expect": "present" }
+    },
+    {
+      "id": "paste-allowed",
+      "statement": "No handler on the password field cancels paste, copy or drop events.",
+      "why": "Blocking paste stops people from using a password manager and pushes them to short, memorable passwords.",
+      "severity": "medium",
+      "verify": { "by": "pattern", "how": "The harness searches the changed files for a paste handler that calls preventDefault; present is a fail.", "pattern": "onPaste=\\{[^}]*preventDefault|addEventListener\\([\"']paste[\"']", "expect": "absent" }
+    },
+    {
+      "id": "real-form",
+      "statement": "The inputs are inside a form element whose submission is handled by its submit event, with a button of type submit, so Enter submits from either field.",
+      "why": "A click handler on a div or a button outside a form cannot be reached by the Enter key or by a password manager's autofill-and-submit.",
+      "severity": "high",
+      "verify": { "by": "review", "how": "Quote the form element with its onSubmit (or submit listener) and the submit button. A click handler on a non-button element answers fail." }
+    },
+    {
+      "id": "same-failure",
+      "statement": "An unknown account and a wrong password produce the same message, the same status code and the same page state.",
+      "why": "Different answers tell anyone with the form which accounts exist.",
+      "severity": "high",
+      "verify": { "by": "check", "how": "A test that signs in once with an unknown identifier and once with a known identifier and a wrong password, and asserts both responses are identical.", "check": "npm test -- --testNamePattern 'same failure for unknown account and wrong password'" }
+    },
+    {
+      "id": "errors-announced",
+      "statement": "A failed sign-in puts its message in a live region (role=alert or aria-live) and marks the offending field aria-invalid with aria-describedby pointing at the message.",
+      "why": "An error shown only as red text near the field is never read out to a screen reader user.",
+      "severity": "high",
+      "verify": { "by": "review", "how": "Quote the element that renders the failure message with its role or aria-live, and the input's aria-invalid and aria-describedby. Either missing answers fail." }
+    },
+    {
+      "id": "no-double-submit",
+      "statement": "While the sign-in request is pending the submit control is disabled or ignored, and it is enabled again when the request fails.",
+      "why": "Two requests for one sign-in can trip lockouts, and a button left disabled after an error leaves the person stuck.",
+      "severity": "medium",
+      "verify": { "by": "review", "how": "Quote where the pending flag is set before the request, and where it is cleared on the failure path (a finally block or the catch). A flag cleared only on success answers fail." }
+    },
+    {
+      "id": "recovery-link",
+      "statement": "The form offers a link or button to reset a forgotten password, reachable by keyboard.",
+      "why": "Without it a person who forgot the password has no way forward from this screen.",
+      "severity": "medium",
+      "verify": { "by": "review", "how": "Quote the anchor or button and its destination or handler. An element reachable only by mouse (a span with onClick) answers fail." },
+      "naWhen": ["the product has no passwords (magic links or single sign-on only)"]
+    },
+    {
+      "id": "body-not-url",
+      "statement": "The credentials are sent with POST in the request body, never in a query string, and no logging or analytics call on the sign-in path receives the password.",
+      "why": "Query strings and logs are stored and copied far from the sign-in path, and a password there is a leak.",
+      "severity": "critical",
+      "verify": { "by": "review", "how": "Quote the request call showing its method and body. Search the sign-in handler for console, logger and analytics calls and quote any that receive form values; one that receives the password answers fail." }
+    },
+    {
+      "id": "focus-visible",
+      "statement": "No style removes the focus outline from the form's inputs, links or buttons without a visible replacement in the same rule.",
+      "why": "Keyboard users lose track of where they are when focus is invisible.",
+      "severity": "medium",
+      "verify": { "by": "review", "how": "Search the form's styles for outline: none or outline: 0. For each match quote the replacement focus style beside it, or answer fail; with no match, answer pass and quote the style file you searched." }
+    },
+    {
+      "id": "focus-after-error",
+      "statement": "After a failed attempt the identifier keeps its value and focus moves to the message or to the first invalid field.",
+      "why": "Retyping the identifier and hunting for the error are what make people give up after a failed sign-in.",
+      "severity": "medium",
+      "verify": { "by": "runtime", "how": "A browser test that submits a wrong password, then asserts the identifier field still holds its value and document.activeElement is the error region or the first invalid input." }
+    },
+    {
+      "id": "small-screen",
+      "statement": "At a 320 CSS pixel wide viewport and at 200% zoom the whole form is usable without scrolling sideways, and its text meets the contrast minimum.",
+      "why": "The sign-in screen is the one screen every user has to get through, on every device.",
+      "severity": "medium",
+      "verify": { "by": "person", "how": "Open the page in a browser at 320 pixels wide and again at 200% zoom; check that nothing is cut off or needs sideways scrolling, and check label and error text with a contrast checker." }
+    }
+  ]
+}
