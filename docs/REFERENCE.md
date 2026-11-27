@@ -160,7 +160,9 @@ checklists stay hand-edited in `devloop.json`.
 **The status bar.** While a change is under way, or whenever a change exists,
 a one-line bar above the prompt reads `devloop  <phase>  ·  tests <state>  ·
 review <state>  ·  gate <met>/<total>  ·  <tier> risk`. Tests show `✓ passed`,
-`✗ failing`, `! error`, `not run` or `not set` (no `verify` checks).
+`✗ failing`, `! error`, `not run` or `not set` (no `verify` checks). In amber,
+`not run since the last change` shows when the checks last passed but files
+have changed since.
 Review shows `✓ passed`, `✗ changes asked`, `… running` or `not run`, and is
 left out for low risk. Colors come from the terminal's theme. The Dev loop and
 settings panels use the terminal's own background.
