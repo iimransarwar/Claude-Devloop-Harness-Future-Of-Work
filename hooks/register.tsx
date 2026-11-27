@@ -48,6 +48,7 @@ import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewe
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
+import { ACTIONS, commandName, registerActions } from './actions'
 import { SET_UP_HEADLINE } from './setup'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
@@ -876,6 +877,7 @@ export const register: Register = on => {
     // The module is live in this session: a classic hook that finds no stamp for a call knows the module's hook was skipped (D1).
     await heartbeat($).catch(() => undefined)
     const at = await wake($).catch(() => null)
+    await registerActions($, at?.isOptedIn === true).catch(() => undefined)
     if (at !== null && at.isOptedIn) {
       if (e.isInteractive) {
         void $.ui.open({ id: PANE, title: 'Dev loop' })
@@ -900,10 +902,16 @@ export const register: Register = on => {
     // The tools are already registered, the same as in any session: setup changes no tool.
     if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
       void $.ui.open({ id: PANE, title: 'Dev loop' })
+      await registerActions($, true).catch(() => undefined)
     }
 
     return answer
   })
+
+  // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
+  for (const a of ACTIONS) {
+    on('command.run', { command: commandName(a) }, ($, e) => command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId))
+  }
 
   // The rules, said once per thread; the guards below are what holds them.
   // One text for every repository and every state (RULES), sent where the

@@ -65,6 +65,10 @@ export type World = {
   onAsk: (() => void) | null
   /** Each tool spec registered, whole, in order (C1: the list must never change). */
   toolSpecs: unknown[]
+  /** Each command name registered, in order. */
+  registered: string[]
+  /** Command names another plugin holds: registering one throws. */
+  takenCommands: string[]
   /** The context each prompt carried down to the engine, in order. */
   contexts: (readonly string[])[]
   /** The live context window as `$.session.usage()` reports it: tokens in use (undefined before a response) and the window. */
@@ -147,7 +151,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     exits: {}, outputs: {}, ran: [], scripts: [], tools: [], isClockBroken: false, isSessionBroken: false, now: 1000,
     sessionId: 's1', root: '/repo', cwd: '/repo', cost: undefined,
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
-    toolSpecs: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
+    toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
     scriptArgs: {}, ignored: {}, capped: null, hold: null, onHeld: null, unreadable: [], toolErrors: [], hookEnv: {}, diffs: {}, committable: null, headTree: null, hidden: [], differs: [], argvs: [], isDiskListed: false,
     setupAnswers: null, isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null,
   }
@@ -201,7 +205,14 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
   })
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
   on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/data/devloop', ...w.hookEnv } }))
-  on('command.register', () => ({ value: { command: 'devloop' } }))
+  on('command.register', (_, e) => {
+    if (w.takenCommands.includes(e.name)) {
+      throw new Error('taken')
+    }
+    w.registered.push(e.name)
+
+    return { value: { command: e.name } }
+  })
   on('tool.register', (_, e) => {
     w.tools.push(`mcp__devloop__${e.name}`)
     w.toolSpecs.push(JSON.parse(JSON.stringify(e)))

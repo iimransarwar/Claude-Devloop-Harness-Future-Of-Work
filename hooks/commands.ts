@@ -48,7 +48,7 @@ import { libraryCommand, libraryDoctor, saveSpec } from './librarycmd'
 import { setup } from './setup'
 import { FEATURES, spec as specFile } from './templates'
 
-const HELP = `/devloop                 where the change stands and what the gate still needs
+export const HELP = `/devloop                 where the change stands and what the gate still needs
 /devloop init            set this repository up for the loop
 /devloop spec <name>     start (or reopen) a spec; only the spec and its tests change until approved
 /devloop approve         approve the spec as written and unlock the build (a person's call)
