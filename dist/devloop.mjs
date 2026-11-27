@@ -88,6 +88,7 @@ var DEFAULTS = {
   budgetUsd: null,
   instructionMaxLines: 200,
   defaultBranch: "main",
+  fastReview: { maxFiles: 3, maxLines: 60, model: "sonnet" },
   blastRadius: {
     maxFiles: 25,
     maxLines: 600,
@@ -258,6 +259,26 @@ function blastRadius(v, errors) {
     manifests: strings(v, "manifests", fallback.manifests, sub)
   };
   errors.push(...sub.map((error) => `blastRadius.${error}`));
+  return out;
+}
+function fastReview(v, errors) {
+  const fallback = DEFAULTS.fastReview;
+  if (v === undefined) {
+    return fallback;
+  }
+  if (!isObject(v)) {
+    errors.push('fastReview: expected { "maxFiles", "maxLines", "model" }; using the default');
+    return fallback;
+  }
+  errors.push(...unknownKeys(v, ["maxFiles", "maxLines", "model"], "fastReview."));
+  const sub = [];
+  const model = v.model === undefined ? fallback.model : v.model === null || typeof v.model === "string" && v.model.trim() !== "" ? v.model : (sub.push("model: expected a model name or null; using the default"), fallback.model);
+  const out = {
+    maxFiles: whole(v, "maxFiles", fallback.maxFiles, 1e5, sub),
+    maxLines: whole(v, "maxLines", fallback.maxLines, 1e7, sub),
+    model
+  };
+  errors.push(...sub.map((error) => `fastReview.${error}`));
   return out;
 }
 function approvals(v, errors) {
@@ -679,6 +700,7 @@ function parseConfig(text) {
     instructionMaxLines: whole(raw, "instructionMaxLines", DEFAULTS.instructionMaxLines, 1e4, errors),
     defaultBranch,
     blastRadius: blastRadius(raw.blastRadius, errors),
+    fastReview: fastReview(raw.fastReview, errors),
     approvals: approvals(raw.approvals, errors),
     reviewers: reviewers(raw.reviewers, errors),
     models: models(raw.models, errors),

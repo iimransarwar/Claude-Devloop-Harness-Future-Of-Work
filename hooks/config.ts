@@ -59,6 +59,8 @@ export type Config = {
   defaultBranch: string
   /** A change past either limit, or touching a dependency manifest, is one tier riskier. */
   blastRadius: { maxFiles: number; maxLines: number; manifests: string[] }
+  /** A small change (not high risk, within both limits) gets one fast critic: the general reviewer only, on `model`. */
+  fastReview: { maxFiles: number; maxLines: number; model: string | null }
   /** How many people approve a merge, by tier. */
   approvals: { low: number; medium: number; high: number }
   reviewers: Reviewer[]
@@ -209,6 +211,7 @@ export const DEFAULTS: Config = {
   budgetUsd: null,
   instructionMaxLines: 200,
   defaultBranch: 'main',
+  fastReview: { maxFiles: 3, maxLines: 60, model: 'sonnet' },
   blastRadius: {
     maxFiles: 25,
     maxLines: 600,
@@ -468,6 +471,30 @@ function blastRadius(v: unknown, errors: string[]): Config['blastRadius'] {
     manifests: strings(v, 'manifests', fallback.manifests, sub),
   }
   errors.push(...sub.map(error => `blastRadius.${error}`))
+
+  return out
+}
+
+/** The size under which a change gets one fast critic, and the model it runs on (null: the reviewer's own). */
+function fastReview(v: unknown, errors: string[]): Config['fastReview'] {
+  const fallback = DEFAULTS.fastReview
+  if (v === undefined) {
+    return fallback
+  }
+  if (!isObject(v)) {
+    errors.push('fastReview: expected { "maxFiles", "maxLines", "model" }; using the default')
+
+    return fallback
+  }
+  errors.push(...unknownKeys(v, ['maxFiles', 'maxLines', 'model'], 'fastReview.'))
+  const sub: string[] = []
+  const model = v.model === undefined ? fallback.model : v.model === null || (typeof v.model === 'string' && v.model.trim() !== '') ? (v.model as string | null) : (sub.push('model: expected a model name or null; using the default'), fallback.model)
+  const out = {
+    maxFiles: whole(v, 'maxFiles', fallback.maxFiles, 100_000, sub),
+    maxLines: whole(v, 'maxLines', fallback.maxLines, 10_000_000, sub),
+    model,
+  }
+  errors.push(...sub.map(error => `fastReview.${error}`))
 
   return out
 }
@@ -993,6 +1020,7 @@ export function parseConfig(text: string): Parsed {
     instructionMaxLines: whole(raw, 'instructionMaxLines', DEFAULTS.instructionMaxLines, 10_000, errors),
     defaultBranch,
     blastRadius: blastRadius(raw.blastRadius, errors),
+    fastReview: fastReview(raw.fastReview, errors),
     approvals: approvals(raw.approvals, errors),
     reviewers: reviewers(raw.reviewers, errors),
     models: models(raw.models, errors),

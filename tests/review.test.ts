@@ -425,3 +425,22 @@ test('CC-F7: after a passing round, a push run in the background closes nothing,
 test('CC-F7: after a passing round, a real push closes the change, and the next review is round 1', async ($, on) => {
   await afterPass($, world(on), 'git push -u origin feature', {}, true)
 })
+
+test('fast critic: a small change gets one general reviewer on the fast model, told to be quick; shadow specialists sit out', async ($, on) => {
+  const config = { ...CONFIG, fastReview: { maxFiles: 3, maxLines: 60, model: 'sonnet' }, reviewers: [{ name: 'a11y', when: ['src/**'], mode: 'shadow', prompt: 'Check accessibility.' }] }
+  const w = world(on, config)
+  await reviewable($, w)
+  await devloop($, 'review')
+  expect(w.spawned.length).toBe(1)
+  expect(w.spawned[0]?.model).toBe('sonnet')
+  expect(w.spawned[0]?.prompt).toMatch(/This is a small change: a fast review\./)
+})
+
+test('fast critic: a change past the limits gets the full review on the reviewer\'s model', async ($, on) => {
+  const config = { ...CONFIG, fastReview: { maxFiles: 0, maxLines: 0, model: 'sonnet' } }
+  const w = world(on, config)
+  await reviewable($, w)
+  await devloop($, 'review')
+  expect(w.spawned[0]?.model).toBeUndefined()
+  expect(w.spawned[0]?.prompt).not.toMatch(/a fast review/)
+})

@@ -82,6 +82,9 @@ function briefOf(one: Reviewer | null): string {
     : `${REVIEWER_BRIEF}\n\nYou are the "${one.name}" specialist reviewer: report only problems of ${one.name}, and leave everything else to the general reviewer.`
 }
 
+/** What a fast critic is told: a small change gets a quick, decisive read. */
+export const FAST_BRIEF = 'This is a small change: a fast review. Read the diff and the test results, report only problems that would block a merge (at most 5), and give the verdict. Do not explore beyond the changed files and what they call.'
+
 /** The model a reviewer runs on: its own, then the policy's for its kind; undefined is the session's. */
 function modelOf(cfg: Config, name: string): string | undefined {
   if (name === 'general') {
@@ -184,18 +187,21 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   const reviewMd = await baseFile($, at, snap.base, 'REVIEW.md')
   const nextId = nextIdOf(loop.findings)
   const tier = tierFor(loop, cfg)
+  // A small change gets one fast critic: the general reviewer on the fast model, and only the specialists the gate needs.
+  const isFast = tier !== 'high' && snap.size.files <= cfg.fastReview.maxFiles && snap.size.lines <= cfg.fastReview.maxLines
+  const specialists = specialistsFor(loop, cfg).filter(one => !isFast || one.mode === 'blocking')
   // The open findings of a reviewer that no longer applies go to the general reviewer for re-check.
-  const names = ['general', ...specialistsFor(loop, cfg).map(one => one.name)]
+  const names = ['general', ...specialists.map(one => one.name)]
   const recheckedBy = (one: Finding): string => (names.includes(one.reviewer) ? one.reviewer : 'general')
   // The reviewer runs nothing (it has no shell): it reads the checks' and the features' results here.
   const features = Object.entries(loop.features).map(([id, one]) => (one.passes && one.tree === loop.tree ? `✓ feature ${id} passes on this tree` : `✗ feature ${id} not passing on this tree`))
   const tests = [...testLines(loop, cfg, await $.clock.now()), ...features]
   const promptFor = (name: string, one: Reviewer | null): string => reviewPrompt({
-    brief: briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, tests, round, maxRounds: cfg.maxReviewRounds,
+    brief: isFast && one === null ? `${briefOf(one)}\n\n${FAST_BRIEF}` : briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, tests, round, maxRounds: cfg.maxReviewRounds,
     open: loop.findings.filter(each => each.status === 'open' && each.route === 'fix' && recheckedBy(each) === name), nextId, delta,
   })
   const spawn = async (name: string, one: Reviewer | null): Promise<string | { deny: string }> => {
-    const model = modelOf(cfg, name)
+    const model = isFast && name === 'general' ? (cfg.fastReview.model ?? modelOf(cfg, name)) : modelOf(cfg, name)
     const started = await $.agent.spawn({
       prompt: promptFor(name, one),
       description: `devloop review, round ${round}${one === null ? '' : ` (${name})`}`,
@@ -211,7 +217,7 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   }
   const agents: ReviewAgent[] = [{ agentId: general, name: 'general', mode: 'general', isRetry: false, answer: null }]
   const missing: string[] = []
-  for (const one of specialistsFor(loop, cfg)) {
+  for (const one of specialists) {
     const started = await spawn(one.name, one)
     if (typeof started === 'string') {
       agents.push({ agentId: started, name: one.name, mode: one.mode, isRetry: false, answer: null })
