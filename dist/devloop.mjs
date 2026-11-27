@@ -4516,7 +4516,7 @@ function verificationRow(loop, cfg, tier, facts) {
     return { label, isMet: tier === "low", note: "no verify commands in devloop.json: nothing proves the work" };
   }
   const foreground = stepsFor(cfg.verify, "full", loop.changed);
-  const background = backgroundFor(cfg.verify, loop.changed);
+  const background = facts.isStateless === true ? [] : backgroundFor(cfg.verify, loop.changed);
   const steps = [...foreground, ...background];
   if (loop.tree === null && background.length > 0) {
     return { label, isMet: false, note: `background checks need a git repository to record a result against: ${list(background.map((one) => one.run))}` };
@@ -5914,13 +5914,18 @@ function proofLoop(proof, cfg) {
 var reviewerOf = (label) => label === "Independent review" ? "general" : label.startsWith("Review: ") ? label.slice("Review: ".length) : null;
 function statelessGate(proof, cfg, facts) {
   const loop = proofLoop(proof, cfg);
-  const rows = gate(loop, cfg, facts).map((row) => {
+  const rows = gate(loop, cfg, { ...facts, isStateless: true }).map((row) => {
     const name = reviewerOf(row.label);
     return name === null ? row : reviewRowFrom(row.label, name, proof.note, proof.committable, policyHash(cfg), proof.isOlderNote === true);
   });
+  const skipped = backgroundFor(cfg.verify, loop.changed).map((one) => one.run);
+  if (skipped.length > 0) {
+    rows.push({ label: "Background checks", isMet: true, note: `${NOT_CHECKED_HERE}: ${skipped.join(", ")}` });
+  }
   return { loop, rows, isGreen: rows.every((row) => row.isMet) };
 }
-var checksFor = (cfg, files, isEmpty) => isEmpty ? [] : [...stepsFor(cfg.verify, "full", files), ...backgroundFor(cfg.verify, files)].map((one) => one.run);
+var checksFor = (cfg, files, isEmpty) => isEmpty ? [] : stepsFor(cfg.verify, "full", files).map((one) => one.run);
+var NOT_CHECKED_HERE = "not checked here (background): CI or the session's background run proves it";
 
 // hooks/residual.ts
 var RESIDUAL_RISKS = [

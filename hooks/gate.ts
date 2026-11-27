@@ -96,6 +96,8 @@ export type GateFacts = {
   hiddenFromGit?: readonly string[]
   /** The time now, so the Verification row can say how long a background run has gone; absent, it names no time. */
   now?: number
+  /** The command line's gate, which keeps no background results: background checks are left to CI or the session (rule 12). */
+  isStateless?: boolean
 }
 
 /** What git and the `tasks` command said about two trees: the paths that differ (null: git could not say), and whether the task files validate. */
@@ -173,7 +175,7 @@ function verificationRow(loop: Loop, cfg: Config, tier: Tier, facts: GateFacts):
     return { label, isMet: tier === 'low', note: 'no verify commands in devloop.json: nothing proves the work' }
   }
   const foreground = stepsFor(cfg.verify, 'full', loop.changed)
-  const background = backgroundFor(cfg.verify, loop.changed)
+  const background = facts.isStateless === true ? [] : backgroundFor(cfg.verify, loop.changed)
   const steps = [...foreground, ...background]
   if (loop.tree === null && background.length > 0) {
     // A background result is recorded against a tree: outside git none starts, so say why rather than wait (Review Focus 5).

@@ -8,7 +8,7 @@ import { policyFacts } from '../hooks/context'
 import { gate, NO_FACTS } from '../hooks/gate'
 import { checksForChange } from '../hooks/limits'
 import { infraAdvice } from '../hooks/output'
-import { checksFor } from '../hooks/portable'
+import { checksFor, NOT_CHECKED_HERE, statelessGate } from '../hooks/portable'
 import { backgroundFor, stepsFor } from '../hooks/rules'
 import { FRESH } from '../hooks/state'
 import { ago, backgroundNotice, testStates } from '../hooks/testruns'
@@ -53,7 +53,8 @@ describe('background checks in the policy', () => {
     expect(policyFacts(cfg, 'enforce')).toMatch(/runs `unit`; run them yourself first\. `slow` runs in the background after your stops, with no time limit; only shipping waits for it\./)
     expect(policyFacts({ ...DEFAULTS, verify: [bg('slow')] }, 'enforce')).not.toMatch(/no verify commands/)
     expect(checksForChange(cfg, ['src/a.ts'])).toBe('Checks for what you changed: `unit`, `slow` (runs in the background).')
-    expect(checksFor(cfg, ['src/a.ts'], false)).toEqual(['unit', 'slow'])
+    // The command line never runs a background check (rule 12): CI or the session's background run proves it.
+    expect(checksFor(cfg, ['src/a.ts'], false)).toEqual(['unit'])
     expect(infraAdvice('x', 'timeout', 600)).toBe('`x` did not finish within 600s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.')
     expect([ago(0), ago(59_999), ago(14 * 60_000), ago(65 * 60_000)]).toEqual(['<1m', '<1m', '14m', '1h 5m'])
   })
@@ -311,5 +312,18 @@ describe('the status bar and the gate agree after an edit', () => {
     expect(status).toMatch(/\[ \] Verification: not run since the last edit/)
     expect(status).not.toMatch(/still running/)
     expect(await bar()).toContain('not run since the last change')
+  })
+})
+
+describe('the command line leaves background checks to CI or the session (rule 12)', () => {
+  test('its gate adds one met row naming them, and its Verification row does not wait on them', () => {
+    const cfg = { ...DEFAULTS, verify: [{ run: 'unit', profile: 'fast' as const, when: null }, { run: 'slow', profile: 'fast' as const, when: null, background: true as const }] }
+    const proof = { tree: 't1', committable: 't1', base: 'b', branch: 'f', files: ['src/a.ts'], runs: [{ run: 'unit', isPassing: true, outcome: 'pass' as const, output: '' }], note: null } as never
+    const facts = { errors: [], lint: [], hiddenFromGit: [], policy: null } as never
+    const { rows } = statelessGate(proof, cfg as never, facts)
+    const bgRow = rows.find(row => row.label === 'Background checks')
+    expect(bgRow?.isMet).toBe(true)
+    expect(bgRow?.note).toBe(`${NOT_CHECKED_HERE}: slow`)
+    expect(rows.find(row => row.label === 'Verification')?.note ?? '').not.toMatch(/slow/)
   })
 })
