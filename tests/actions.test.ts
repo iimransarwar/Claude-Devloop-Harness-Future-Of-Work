@@ -46,3 +46,28 @@ test('a throwing /devloop shows the real error, not the engine line', async ($, 
   const w = world(on, null); w.failing['fs.exists'] = 'disk unavailable'; await start($)
   expect(await devloop($, 'init')).toMatch(/^devloop: \/devloop init failed: .*disk unavailable/)
 })
+test('a person typing /devloop in a set-up repo opens the panel', async ($, on) => {
+  const w = world(on); await start($); w.opened.length = 0
+  await devloop($, '')
+  expect(w.opened).toContain('devloop')
+})
+test('a person typing a menu entry opens the panel too', async ($, on) => {
+  const w = world(on); await start($); w.opened.length = 0
+  await $.command.run({ command: 'devloop-help', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect(w.opened).toContain('devloop')
+})
+test('the agent running /devloop does not open the panel', async ($, on) => {
+  const w = world(on); await start($); w.opened.length = 0
+  await devloop($, '', { kind: 'sdk' })
+  expect(w.opened).not.toContain('devloop')
+})
+test('a person in a repo not set up does not get the panel from doctor', async ($, on) => {
+  const w = world(on, null); await start($); w.opened.length = 0
+  await devloop($, 'doctor')
+  expect(w.opened).not.toContain('devloop')
+})
+test('a menu entry whose command throws shows the readable failure (doctor reaches fs.exists)', async ($, on) => {
+  const w = world(on, null); w.failing['fs.exists'] = 'disk unavailable'; await start($)
+  const r = await $.command.run({ command: 'devloop-doctor', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect(r.text).toMatch(/^devloop: \/devloop doctor failed: .*disk unavailable/)
+})

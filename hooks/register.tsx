@@ -35,7 +35,7 @@ import { foldInbox, heartbeat, stampCall, stampPrompt, stampStop } from './porta
 import { backstop, firstLine, groundingMode, isLook, isQuestionOfFact, NUDGE } from './grounding'
 import { checksForChange, isAtLimit, limitLines, NO_LIMIT } from './limits'
 import { countFailedRound, limitNow, notePassing, reachLimit } from './rounds'
-import { audit, auditOf, keepRecord, listOf, meterCost } from './journal'
+import { audit, auditOf, isFromPerson, keepRecord, listOf, meterCost } from './journal'
 import { hit, papercutGroups, papercutGroup, PAPERCUTS_PER_TURN } from './ledger'
 import type { Hits, Papercut, PapercutClose } from './ledger'
 import { syncRegressions } from './regress'
@@ -226,6 +226,20 @@ export const TOOL_SPECS = [
 
 /** A hash of the tool list as registered: part of devloop's own prefix, for the cache meter. */
 const TOOLS_HASH = digest(JSON.stringify(TOOL_SPECS))
+
+/**
+ * A pane opened while serving a person's command counts as asked, so the engine draws it at any width.
+ * Looked up fresh: the command may just have set the repository up. A failure here never fails the command.
+ */
+async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): Promise<void> {
+  if (!isFromPerson(e)) {
+    return
+  }
+  const at = await locate($).catch(() => null)
+  if (at !== null && at.isOptedIn) {
+    await Promise.resolve($.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
+  }
+}
 
 /** Registers every tool, the same specs in every session (see TOOL_SPECS). */
 async function registerTools($: Engine): Promise<void> {
@@ -901,16 +915,21 @@ export const register: Register = on => {
     const answer = await command($, e, turnId)
     // The tools are already registered, the same as in any session: setup changes no tool.
     if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
-      void $.ui.open({ id: PANE, title: 'Dev loop' })
       await registerActions($, true).catch(() => undefined)
     }
+    await openForPerson($, e)
 
     return answer
   }).catch(($, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
 
   // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
   for (const a of ACTIONS) {
-    on('command.run', { command: commandName(a) }, ($, e) => command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId))
+    on('command.run', { command: commandName(a) }, async ($, e) => {
+      const answer = await command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId)
+      await openForPerson($, e)
+
+      return answer
+    })
       .catch(($, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
   }
 
