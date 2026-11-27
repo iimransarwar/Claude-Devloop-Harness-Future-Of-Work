@@ -7,9 +7,9 @@
 // A repository opts in with a devloop.json at its root; without one only the
 // secrets guard and /devloop (which sets it up) are live.
 
-import type { Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage } from 'claude-code'
+import type { CommandRunInput, CommandRunResult, Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage } from 'claude-code'
 
-import type { Loop, PaneTab } from '../types'
+import type { Loop, PaneTab, SettingsDraft } from '../types'
 import { cacheReport, hitRate, meterTurn } from './cache'
 import type { Miss } from './cache'
 import { briefFacts, command, keepGate, NOT_GIT_STATUS, statusReport, writeHandoff } from './commands'
@@ -29,7 +29,7 @@ import {
 } from './coord'
 import { candidateContext, isChecklistAgent } from './checklists'
 import { isSecretPattern, namesDefaultSecret, resolvedWriteRefusals } from './enforce'
-import { guardNow, handoffFor } from './cachecmd'
+import { cacheGuardState, guardNow, handoffFor } from './cachecmd'
 import { finishEval, historyOf } from './evals'
 import { foldInbox, heartbeat, stampCall, stampPrompt, stampStop } from './portability'
 import { backstop, firstLine, groundingMode, isLook, isQuestionOfFact, NUDGE } from './grounding'
@@ -48,8 +48,10 @@ import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewe
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
-import { ACTIONS, commandName, failureText, registerActions } from './actions'
-import { SET_UP_HEADLINE } from './setup'
+import { ACTIONS, commandName, failureText, reasonOf, registerActions } from './actions'
+import { applyChanges, changedKeys, effectLine, readSettings } from './settings'
+import type { RowKey, SettingsView } from './settings'
+import { SET_UP_HEADLINE, setup } from './setup'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
   matchesAny, maybeWrittenByReading, namedPlacesByReading, NEVER_LIFTED, place, relative, shipLookups, shipsOf, strictest, whereOf, writtenPaths, writtenPathsByReading, writesOpenPath,
@@ -64,7 +66,7 @@ import type { TasksFacts } from './tasks'
 import {
   abandonStale, addOpenQuestion, brief, bump, cacheOf, recordLesson, checkReviewDiff, currentBranch, envFor, factsOf, filesUnder, forget, git, heldMainRoot, heldPolicy, coverageNow, locate, look, loopOf, markError,
   metrics, modeInForce, modeOf, note, outputPath, policyInForce, questionsOf, readFeatures, record, refresh, remoteOf, restore, runFeatures, save, saveCache, sectionOf,
-  setSection, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, verifyNow, withGlobs, withSnapshot, placesOf,
+  setSection, settingsDraftOf, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, updateSettingsDraft, verifyNow, withGlobs, withSnapshot, placesOf,
 } from './state'
 import type { Engine, Place } from './state'
 import { fixAdvice, RULES } from './templates'
@@ -72,6 +74,8 @@ import { editedText, judgeTestEdit } from './weaken'
 import type { TestEdit } from './weaken'
 
 const PANE = 'devloop'
+/** The settings popup: a person's, opened by /devloop settings. */
+export const SETTINGS_PANE = 'devloop-settings'
 const FEATURE_CHECK = 'mcp__devloop__feature_check'
 const STATUS = 'mcp__devloop__devloop_status'
 const BLOCKED = 'mcp__devloop__devloop_blocked'
@@ -240,6 +244,142 @@ async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): 
     void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
   }
 }
+
+// ------------------------------------------------------------ the settings popup
+
+const SETTINGS_OPEN = 'Settings are open.'
+const SETTINGS_REFUSED = "Settings are a person's: type /devloop settings."
+const SETTINGS_FOOTER = 'Tiers, protected paths, reviewers and the rest: edit devloop.json.'
+/** The width of the label column: the longest label and a space. */
+const SETTINGS_LABEL = 23
+/** Who a Save is from in the audit trail: a press on the popup, which only a person's surface raises. */
+const SETTINGS_ACTOR: Actor = { kind: 'person', name: 'settings' }
+
+/**
+ * Whether the session's Python was missing when the popup last opened: a
+ * render runs nothing, so cache-guard's row learns it from the opening.
+ */
+let isPythonMissing = false
+
+const isSettings = (args: string): boolean => args.trim().split(/\s+/)[0] === 'settings'
+
+/** Each row's value as the popup shows it before any pick. */
+const openedWithOf = (view: SettingsView): Record<RowKey, string> => Object.fromEntries(view.rows.map(row => [row.key, row.current])) as Record<RowKey, string>
+
+/** Why the popup cannot show devloop.json, as a person reads it. */
+const unreadableOf = (error: string): string => `${error.replace(/; every field takes its default$/, '')}. Fix it by hand, then open settings again.`
+
+/**
+ * /devloop settings and /devloop-settings, a person's: where a policy
+ * governs, opens the popup with a fresh draft (so a draft an Esc left is never
+ * shown again); where none does, runs setup, as a person's bare /devloop does.
+ */
+async function settingsCommand($: Engine, e: CommandRunInput): Promise<CommandRunResult> {
+  if (!isFromPerson(e)) {
+    return { text: SETTINGS_REFUSED }
+  }
+  // Read afresh: a Save or a hand edit a moment ago shows at once.
+  forget()
+  const at = await locate($)
+  // Asked here, as locate asks only where the working tree has no copy: the popup's line says whether the base branch's copy governs.
+  if ((await policyInForce($, at)) === null) {
+    return setup($, e)
+  }
+  const view = at.text === null ? null : readSettings(at.text)
+  await updateSettingsDraft($, () => (view === null || 'error' in view ? null : { changes: {}, openedWith: openedWithOf(view) }))
+  isPythonMissing = (await cacheGuardState($).catch(() => 'available' as const)) === 'no-python'
+  void Promise.resolve()
+    .then(() => $.ui.open({ id: SETTINGS_PANE, title: 'devloop settings', focus: true, closeOnEscape: true, backgroundColor: 'transparent' }))
+    .catch(() => undefined)
+
+  return { text: SETTINGS_OPEN }
+}
+
+/**
+ * Answers one /devloop command for its hook (/devloop or a menu entry). A
+ * person's answer opens the Dev loop pane, except where it opened the settings
+ * popup: that is the one pane its command opens.
+ */
+async function answerCommand($: Engine, e: CommandRunInput, turnId: string | null): Promise<CommandRunResult> {
+  const answer = isSettings(e.args) ? await settingsCommand($, e) : await command($, e, turnId)
+  // The tools are already registered, the same as in any session: setup changes no tool.
+  if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
+    await registerActions($, true).catch(() => undefined)
+  }
+  if (answer.text !== SETTINGS_OPEN) {
+    await openForPerson($, e)
+  }
+
+  return answer
+}
+
+/** A pick goes into the draft; picking the value the popup opened with takes the change back out. */
+async function pickSetting($: Engine, key: Exclude<RowKey, 'tests'>, value: string, opened: Record<RowKey, string>): Promise<void> {
+  await updateSettingsDraft($, (draft): SettingsDraft => {
+    const openedWith = draft?.openedWith ?? opened
+    const changes = { ...draft?.changes }
+    if (value === openedWith[key]) {
+      delete changes[key]
+    } else {
+      changes[key] = value
+    }
+
+    return { changes, openedWith }
+  })
+}
+
+/**
+ * Cancel, and the end of a Save: the draft goes, then the popup. Dropped here,
+ * as devloop's own close does not reach its own `ui.close` hook; Esc does.
+ */
+async function closeSettings($: Engine): Promise<void> {
+  await updateSettingsDraft($, () => null)
+  await $.ui.close({ id: SETTINGS_PANE })
+}
+
+/**
+ * Save: sets only the keys the person changed in devloop.json as it is now
+ * (merging nested objects, keeping every other field), writes the audit
+ * entry, closes the popup and says when the change applies. A file that does
+ * not read, or a write that fails, leaves the popup and its draft open.
+ */
+async function saveSettings($: Engine): Promise<void> {
+  const changes = (await settingsDraftOf($))?.changes ?? {}
+  forget()
+  const at = await locate($)
+  // Checked again now, so the line below says what holds: the base branch's copy, when it has one, governs until this is committed.
+  const policy = (await policyInForce($, at).catch(() => null)) ?? heldPolicy(at)
+  const view = at.text === null ? null : readSettings(at.text)
+  if (at.text === null || view === null || 'error' in view) {
+    $.ui.toast(`devloop: nothing was saved. ${unreadableOf(view !== null && 'error' in view ? view.error : 'devloop.json is not in this working tree')}`, { timeoutMs: 12_000 })
+
+    return
+  }
+  const keys = changedKeys(changes)
+  const next = applyChanges(at.text, changes)
+  let said: string | null = null
+  if (keys.length > 0 && next !== at.text) {
+    try {
+      await $.fs.write(`${at.root}/devloop.json`, next)
+    } catch (error) {
+      $.ui.toast(`devloop: devloop.json could not be written (${reasonOf(error)}). Nothing was saved.`, { timeoutMs: 12_000 })
+
+      return
+    }
+    // The next read sees the file just written, and the panes the policy in force found again.
+    forget()
+    await locate($).then(fresh => policyInForce($, fresh)).catch(() => null)
+    await audit($, at.root, 'settings-changed', SETTINGS_ACTOR, keys.join(', '), null)
+    said = effectLine(policy?.cfg.defaultBranch ?? DEFAULTS.defaultBranch, policy?.source === 'base', true)
+  }
+  await closeSettings($)
+  if (said !== null) {
+    $.ui.toast(said, { timeoutMs: 12_000 })
+  }
+}
+
+/** The popup's buttons whose work is not wired yet: drawn, and a press does nothing. */
+const notYet = (): void => undefined
 
 /** Registers every tool, the same specs in every session (see TOOL_SPECS). */
 async function registerTools($: Engine): Promise<void> {
@@ -910,28 +1050,23 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'devloop' }, async ($, e) => {
-    // An exemption granted while a turn runs belongs to that turn.
-    const answer = await command($, e, turnId)
-    // The tools are already registered, the same as in any session: setup changes no tool.
-    if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
-      await registerActions($, true).catch(() => undefined)
-    }
-    await openForPerson($, e)
-
-    return answer
-  }).catch((_, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
+  // An exemption granted while a turn runs belongs to that turn.
+  on('command.run', { command: 'devloop' }, ($, e) => answerCommand($, e, turnId))
+    .catch((_, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
 
   // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
   for (const a of ACTIONS) {
-    on('command.run', { command: commandName(a) }, async ($, e) => {
-      const answer = await command($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId)
-      await openForPerson($, e)
-
-      return answer
-    })
+    on('command.run', { command: commandName(a) }, ($, e) => answerCommand($, { ...e, args: `${a.name} ${e.args}`.trim() }, turnId))
       .catch((_, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
   }
+
+  // Esc closes the settings popup as Cancel does: the draft goes with it.
+  on('ui.close', { id: SETTINGS_PANE }, async ($, e, next) => {
+    const closed = await next(e)
+    await updateSettingsDraft($, () => null)
+
+    return closed
+  }).catch(() => undefined)
 
   // The rules, said once per thread; the guards below are what holds them.
   // One text for every repository and every state (RULES), sent where the
@@ -2182,6 +2317,86 @@ export const register: Register = on => {
         </Box>
         {body}
         <Text dimColor wrap="truncate-end">{root}</Text>
+      </Box>
+    )
+  })
+
+  // The settings popup: a picker per setting from the working tree's
+  // devloop.json, the draft's picks over it, Save and Cancel. Drawing writes
+  // nothing and runs nothing; the draft is written from the handlers.
+  on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
+    const { Box, Button, Select, Text } = $.ui.resolve(e)
+    const at = await look($)
+    const text = at.text
+    const view = text === null ? { error: 'devloop.json is not in this working tree' } : readSettings(text)
+    const cancel = <Button key="cancel" label="Cancel" onPress={() => closeSettings($)} />
+    if (text === null || 'error' in view) {
+      // Never written over: only Cancel.
+      return (
+        <Box flexDirection="column">
+          <Text color="error" wrap="wrap">{unreadableOf('error' in view ? view.error : '')}</Text>
+          <Box>{cancel}</Box>
+        </Box>
+      )
+    }
+    const draft = await settingsDraftOf($)
+    const opened = draft?.openedWith ?? openedWithOf(view)
+    const changes = draft?.changes ?? {}
+    // The tests row shows the checks a Save would write.
+    const after = changes.verify === undefined ? view : readSettings(applyChanges(text, { verify: changes.verify }))
+    const tests = 'rows' in after ? after.rows.find(row => row.key === 'tests') : undefined
+    // The policy devloop last held: whether the base branch's copy governs, and the base's name.
+    const policy = heldPolicy(at)
+    const guard = (await guardNow($).catch(() => null))?.hasStatusLine === true ? 'installed' : isPythonMissing ? 'no-python' : 'available'
+    const label = (name: string) => <Text> {name.padEnd(SETTINGS_LABEL)}</Text>
+    const mark = (isChanged: boolean) => <Text color={isChanged ? 'suggestion' : undefined}>{isChanged ? '•' : ' '}</Text>
+    const rows = view.rows.flatMap(row => {
+      if (row.key === 'tests') {
+        return [
+          <Box>
+            {mark(changes.verify !== undefined)}
+            {label(row.label)}
+            <Text wrap="truncate-end">{tests?.current ?? row.current} </Text>
+            <Button key="tests-change" label="Change" onPress={notYet} />
+          </Box>,
+          row.error !== null && <Text color="error" wrap="wrap">  {row.error}</Text>,
+        ]
+      }
+      const key = row.key
+
+      return [
+        <Box>
+          {mark(changes[key] !== undefined)}
+          {label(row.label)}
+          <Select
+            key={`row-${key}`}
+            options={row.options}
+            value={changes[key] ?? row.current}
+            autoFocus={key === 'mode' ? true : undefined}
+            onSelect={value => pickSetting($, key, value, opened)}
+          />
+        </Box>,
+        row.error !== null && <Text color="error" wrap="wrap">  {row.error}</Text>,
+      ]
+    })
+
+    return (
+      <Box flexDirection="column">
+        {rows}
+        <Box>
+          {mark(false)}
+          {label('cache-guard')}
+          <Text>{guard === 'installed' ? 'installed' : guard === 'available' ? 'not installed' : 'needs Python 3.8+'} </Text>
+          {guard === 'installed' && <Button key="cache-remove" label="Remove" onPress={notYet} />}
+          {guard === 'available' && <Button key="cache-install" label="Install" onPress={notYet} />}
+        </Box>
+        <Text color="subtle" wrap="wrap">{effectLine(policy?.cfg.defaultBranch ?? DEFAULTS.defaultBranch, policy?.source === 'base', false)}</Text>
+        <Text color="subtle" wrap="wrap">{SETTINGS_FOOTER}</Text>
+        <Box>
+          <Button key="save" label="Save" variant="primary" onPress={() => saveSettings($)} />
+          <Text> </Text>
+          {cancel}
+        </Box>
       </Box>
     )
   })

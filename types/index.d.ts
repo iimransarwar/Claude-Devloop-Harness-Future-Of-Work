@@ -332,9 +332,19 @@ export type PaneTab = 'gate' | 'features' | 'findings' | 'activity' | 'metrics'
 /** Whether the rules section is sent, decided once per session id (F6): it survives a plugin reload. */
 export type SectionDecision = { sessionId: string | null; isOn: boolean | null }
 
+/** The settings popup's rows, as hooks/settings.ts names them (`RowKey`; the contract imports nothing). */
+export type SettingsRow = 'mode' | 'tests' | 'scope' | 'autoReview' | 'approvals' | 'grounding' | 'learning' | 'library'
+
+/**
+ * The settings popup's draft: the picks not yet saved (hooks/settings.ts
+ * `Changes`: an option's value by row, and a replacement `verify` list), and
+ * each row's value when the popup opened, so a pick back to it is no change.
+ */
+export type SettingsDraft = { changes: Partial<Record<SettingsRow, string>> & { verify?: readonly unknown[] }; openedWith: Record<SettingsRow, string> }
+
 declare module 'claude-code' {
   interface PluginState {
-    devloop: { loop: Shaped<Loop>; mode: Mode; tab: PaneTab; section: Shaped<SectionDecision> }
+    devloop: { loop: Shaped<Loop>; mode: Mode; tab: PaneTab; section: Shaped<SectionDecision>; settings: Shaped<SettingsDraft | null> }
   }
   // The plugin's own tools, so `e.tool === <name>` narrows to their input.
   interface McpToolInputs {

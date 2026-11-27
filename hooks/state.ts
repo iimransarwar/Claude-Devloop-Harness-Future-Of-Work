@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision } from '../types'
+import type { FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
 import { EMPTY_CACHE } from './cache'
 import type { CacheState } from './cache'
 import { parseConfig } from './config'
@@ -90,6 +90,22 @@ export function tabOf($: Engine): Promise<PaneTab> {
 /** Shows another tab of the pane: called from a tab button's handler, never from a render. */
 export async function setTab($: Engine, tab: PaneTab): Promise<void> {
   await update($, TAB, () => tab)
+}
+
+/**
+ * The settings popup's draft, kept until Save or a close: written when the
+ * popup opens and from its pickers' handlers, never while drawing.
+ */
+const SETTINGS = atom({ plugin: 'devloop', key: 'settings' } as const, null as SettingsDraft | null, { shape: 'settings-1' })
+
+/** The settings draft as it stands; read while drawing, it redraws the popup on a change. */
+export function settingsDraftOf($: Engine): Promise<SettingsDraft | null> {
+  return read($, SETTINGS)
+}
+
+/** Changes the settings draft (null drops it): from the command that opens the popup and its handlers. */
+export async function updateSettingsDraft($: Engine, change: (draft: SettingsDraft | null) => SettingsDraft | null): Promise<void> {
+  await update($, SETTINGS, change)
 }
 
 export type Place = {

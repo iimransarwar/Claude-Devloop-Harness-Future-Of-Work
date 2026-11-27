@@ -48,6 +48,10 @@ export type World = {
   tools: string[]
   /** The id of each `ui.open`, in order. */
   opened: string[]
+  /** Each `ui.open`'s arguments, whole, in order. */
+  openArgs: unknown[]
+  /** The id of each `ui.close` that reached the engine, in order. */
+  closed: string[]
   /** Event name to error message: that call fails with it (only `fs.exists` today). */
   failing: Record<string, string>
   /** Makes `$.clock.now` throw, so a step that needs the time fails. */
@@ -163,7 +167,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     links: {},
     tree: 't0', branch: 'feature', base: 'b0', changed: [], since: [], basePolicy: 'same', pushRange: null, tracked: [], defaultBranch: 'main', lists: {},
     added: '', testHashes: {}, baseFiles: {},
-    exits: {}, outputs: {}, ran: [], scripts: [], tools: [], opened: [], failing: {}, isClockBroken: false, isSessionBroken: false, now: 1000,
+    exits: {}, outputs: {}, ran: [], scripts: [], tools: [], opened: [], openArgs: [], closed: [], failing: {}, isClockBroken: false, isSessionBroken: false, now: 1000,
     sessionId: 's1', root: '/repo', cwd: '/repo', cost: undefined,
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
     toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
@@ -239,8 +243,14 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
       throw new Error('pane unavailable')
     }
     w.opened.push((e as { id: string }).id)
+    w.openArgs.push(JSON.parse(JSON.stringify(e)))
 
     return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_, e) => {
+    w.closed.push(e.id)
+
+    return { value: undefined }
   })
   on('ui.status', () => ({ value: undefined }))
   on('ui.log', (_, e) => {
