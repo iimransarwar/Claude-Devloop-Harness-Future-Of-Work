@@ -560,7 +560,7 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
     $.ui.toast(`devloop: two review rounds in a row closed no finding, so the review loop stopped at round ${round}. A person needs to read this change.`, { timeoutMs: 15_000 })
     text = `The independent review stopped (round ${round} of ${cfg.maxReviewRounds}): two rounds in a row closed none of the open findings. Stop working on them now and tell the person which findings are still open and what you tried.\n\n${toFix.map(formatFinding).join('\n')}`
   } else if (toFix.length === 0) {
-    text = `The independent review (round ${round} of ${cfg.maxReviewRounds}) left only findings that await a person's decision: ${decisions.map(one => one.id).join(', ')}. Do not act on them; stop and say so.`
+    text = `The independent review (round ${round} of ${cfg.maxReviewRounds}) left only findings that await a person's decision: ${decisions.map(one => one.id).join(', ')}. Do not act on them; stop and say so, and give the person the one command that settles them: /devloop findings resolve all <note>.`
   } else {
     $.ui.toast(isLast ? `devloop: review failed ${round} times; a person needs to look` : `devloop: review round ${round} found problems`)
     text = [

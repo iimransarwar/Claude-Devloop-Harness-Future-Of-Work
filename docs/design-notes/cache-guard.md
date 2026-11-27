@@ -14,8 +14,8 @@ This note is the system of record for how it is included.
 
 ### 1. Vendored unchanged
 The files are copied byte for byte into `cache-guard/` (`cache_guard.py`,
-`lean.md`, its `README.md`, `tests/`, `docs/`), from commit `5a37bf0`
-(v2.6.0). A manifest (`cache-guard/VENDORED.json`) records the source
+`lean.md`, its `README.md`, `tests/`, `docs/`), from commit `9256974`
+(v2.6.1). A manifest (`cache-guard/VENDORED.json`) records the source
 repository, the commit and a SHA-256 for every file; the smoke test fails if a
 vendored file differs from its manifest entry, and runs cache-guard's own
 test suite. Nothing in devloop edits those files: an update is a fresh copy

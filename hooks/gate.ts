@@ -267,7 +267,7 @@ function reviewRow(loop: Loop, cfg: Config, name: string, label: string, rows: r
     return {
       label,
       isMet: false,
-      note: `${decisions.map(one => one.id).join(', ')} await${decisions.length === 1 ? 's' : ''} a person's decision: /devloop findings resolve <id> <note>${open.length > decisions.length ? `; ${open.length - decisions.length} more to fix` : ''}`,
+      note: `${decisions.map(one => one.id).join(', ')} await${decisions.length === 1 ? 's' : ''} a person's decision: /devloop findings resolve all <note> (or one: resolve <id> <note>)${open.length > decisions.length ? `; ${open.length - decisions.length} more to fix` : ''}`,
     }
   }
   if (review.isStalled && open.length > 0) {

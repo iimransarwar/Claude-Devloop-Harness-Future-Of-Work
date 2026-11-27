@@ -1004,7 +1004,7 @@ else
     [ "$got" = "$want" ] || fail "cache-guard/$file matches its manifest hash (got '${got:-missing}')"
   done <<<"$listed"
   [ "$count" -ge 4 ] && pass "every vendored cache-guard file ($count) matches its manifest hash" || fail "the manifest lists the vendored files ($count)"
-  grep -q '"commit": "5a37bf0c1ff61f5a26eb8e6807901eadc06d1244"' "$manifest" && pass "the manifest names the upstream commit" || fail "the manifest names the upstream commit"
+  grep -q '"commit": "9256974ddec1ad8c79a6b28fe37001b3a73e190e"' "$manifest" && pass "the manifest names the upstream commit" || fail "the manifest names the upstream commit"
   grep -q '"license": "Apache-2.0"' "$manifest" && pass "the manifest names the licence" || fail "the manifest names the licence"
   for added in LICENSE NOTICE.md; do
     sed -n '/"added": {/,/}/p' "$manifest" | grep -q "\"$added\"" && [ -f "$here/cache-guard/$added" ] && pass "cache-guard/$added is listed as added, apart from the vendored files" || fail "cache-guard/$added is listed as added"

@@ -4618,7 +4618,7 @@ function reviewRow(loop, cfg, name, label, rows, facts) {
     return {
       label,
       isMet: false,
-      note: `${decisions.map((one) => one.id).join(", ")} await${decisions.length === 1 ? "s" : ""} a person's decision: /devloop findings resolve <id> <note>${open.length > decisions.length ? `; ${open.length - decisions.length} more to fix` : ""}`
+      note: `${decisions.map((one) => one.id).join(", ")} await${decisions.length === 1 ? "s" : ""} a person's decision: /devloop findings resolve all <note> (or one: resolve <id> <note>)${open.length > decisions.length ? `; ${open.length - decisions.length} more to fix` : ""}`
     };
   }
   if (review.isStalled && open.length > 0) {
@@ -5038,7 +5038,7 @@ function pushSends(committable, sent, seen = { hidden: [], differs: [], differCo
 }
 
 // hooks/records.ts
-var HARNESS_VERSION = "0.7.1";
+var HARNESS_VERSION = "0.7.2";
 var str = (maxLength = 300) => ({ type: "string", maxLength });
 var text = (maxLength = 300) => ({ type: "string", maxLength });
 var nullableText = (maxLength = 300) => ({ type: ["string", "null"], maxLength });

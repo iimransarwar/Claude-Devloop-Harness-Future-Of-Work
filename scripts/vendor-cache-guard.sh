@@ -26,7 +26,7 @@ version=$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' "$src/cache_guard.py" | head -1)
 [ -n "$version" ] || { echo "vendor-cache-guard: no VERSION line in $src/cache_guard.py" >&2; exit 1; }
 
 # The files as the commit holds them, nothing untracked.
-mapfile -t files < <(git -C "$src" ls-files -- cache_guard.py lean.md README.md tests docs | LC_ALL=C sort)
+files=(); while IFS= read -r f; do files+=("$f"); done < <(git -C "$src" ls-files -- cache_guard.py lean.md README.md tests docs | LC_ALL=C sort)
 
 # Start from an empty folder but for the files this repository adds.
 mkdir -p "$dest"
