@@ -86,3 +86,11 @@ test('a menu entry whose command throws shows the readable failure (doctor reach
   const r = await $.command.run({ command: 'devloop-doctor', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
   expect(r.text).toMatch(/^devloop: \/devloop doctor failed: disk unavailable\. If it keeps/)
 })
+
+test('the panel\'s Close button closes the Dev loop panel', async ($, on) => {
+  const w = world(on); await start($)
+  const ui = await $.ui.mount({ plugin: 'devloop', surface: 'terminal', component: 'Pane', requestId: 'devloop', props: { title: 'Dev loop', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {}, id: 'devloop', plugin: 'devloop' } } as never)
+  await ui.press({ key: 'close' })
+  await Promise.resolve(); await Promise.resolve()
+  expect(w.closed).toContain('devloop')
+})
