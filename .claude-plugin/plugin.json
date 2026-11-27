@@ -1,6 +1,6 @@
 {
   "name": "devloop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Rails for an agent-driven development loop: protected tests and specs, a verify gate at every stop, a fresh-context reviewer, risk tiers, and a ledger that turns repeated failures into rules.",
   "author": {
     "name": "devloop contributors"

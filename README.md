@@ -279,6 +279,11 @@ After changing `hooks/` or `cli/`, rebuild with `bash scripts/build.sh` and
 commit `dist/devloop.mjs`. The smoke test fails if the committed build
 differs from its sources.
 
+**Releasing.** Bump `version` in `.claude-plugin/plugin.json` for every
+release. Claude Code updates an installed plugin only when that version
+changes: with the same number, `claude plugin update devloop@devloop` says
+it is already at the latest version and keeps the old code.
+
 ## Learn more
 
 - [The full reference](docs/REFERENCE.md): every command, policy field and
