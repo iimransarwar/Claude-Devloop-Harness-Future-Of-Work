@@ -59,10 +59,11 @@ test('a person typing /devloop in a set-up repo opens the panel', async ($, on) 
   await devloop($, '')
   expect(w.opened).toContain('devloop')
 })
-test('a person typing a menu entry opens the panel too', async ($, on) => {
+test('a menu entry or another action answers in the chat and leaves a closed panel closed', async ($, on) => {
   const w = world(on); await start($); w.opened.length = 0
   await $.command.run({ command: 'devloop-help', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
-  expect(w.opened).toContain('devloop')
+  await $.command.run({ command: 'devloop', args: 'audit 3', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect(w.opened).not.toContain('devloop')
 })
 test('the agent running /devloop does not open the panel', async ($, on) => {
   const w = world(on); await start($); w.opened.length = 0

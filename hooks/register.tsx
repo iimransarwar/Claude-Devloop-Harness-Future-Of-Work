@@ -261,6 +261,11 @@ const TOOLS_HASH = digest(JSON.stringify(TOOL_SPECS))
  * A pane opened while serving a person's command counts as asked, so the engine draws it at any width.
  * Looked up fresh: the command may just have set the repository up. A failure here never fails the command.
  */
+/** Closes the Dev loop panel: the person's Close button. */
+function closePane($: Engine): void {
+  void Promise.resolve().then(() => $.ui.close({ id: PANE })).catch(() => undefined)
+}
+
 async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): Promise<void> {
   if (!isFromPerson(e)) {
     return
@@ -282,7 +287,9 @@ async function answerCommand($: Engine, e: CommandRunInput, turnId: string | nul
   if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
     await registerActions($, true).catch(() => undefined)
   }
-  if (answer.text !== SETTINGS_OPEN) {
+  // Only /devloop itself (the status) opens the panel: every other action answers in the chat, so a closed panel stays closed.
+  const isStatus = e.command === 'devloop' && /^\s*(status)?\s*$/.test(e.args)
+  if (answer.text !== SETTINGS_OPEN && (isStatus || answer.text?.startsWith(SET_UP_HEADLINE) === true)) {
     await openForPerson($, e)
   }
 
@@ -2314,6 +2321,7 @@ export const register: Register = on => {
         tier !== 'none' && <Text color="subtle">Merge: {approvers(tier, cfg)}</Text>,
         <Box>
           <Button key="verify" label="Verify" onPress={act('verify')} />
+          <Button key="close" label="Close" onPress={() => closePane($)} />
           <Text> </Text>
           <Button key="review" label="Review" onPress={act('review')} />
           <Text> </Text>
