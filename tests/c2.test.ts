@@ -576,7 +576,7 @@ describe('6. measurement', () => {
     const record = list<Record<string, unknown>>(w, 'changes')[0] ?? {}
     expect(record).toMatchObject({ schema: 'change-record@1', id: 'C1', tier: 'medium', files: ['src/a.ts'], fixRounds: 1, reviewRounds: 0, isFirstPass: null, durationMs: 60_000 })
     expect(record.costUsd).toBe(1)
-    expect(record.inputs).toMatchObject({ model: 'model-a', harness: '0.6.1', tree: w.tree })
+    expect(record.inputs).toMatchObject({ model: 'model-a', harness: '0.7.0', tree: w.tree })
     expect((record.gate as { isGreen: boolean }).isGreen).toBe(false)
     const gates = list<{ why: string }>(w, 'gates')
     expect(gates.map(one => one.why)).toEqual(['done'])

@@ -57,7 +57,7 @@ describe('carried from D1: a held refusal always wins over a recorded-only one, 
 
 // ---------------------------------------------------------------- D2 F1, F2: a verdict carries with everything bound to its tree, decided afresh each time
 
-const TASKS_ON = { verify: ['npm test'], mode: 'enforce', tasks: { integrate: 'enforce' } }
+const TASKS_ON = { verify: ['npm test'], mode: 'enforce', reviewOnFinish: false, tasks: { integrate: 'enforce' } }
 const CHARGE = ['import x', 'export function charge(cents: number) {', '  return Math.floor(cents)', '}'].join('\n')
 const F_HIGH = 'F1 | high | src/charge.ts:3 | return Math.floor(cents) | rounds down | a test with 0.5'
 const reply = ($: Dollar, agentId: string, text: string) =>

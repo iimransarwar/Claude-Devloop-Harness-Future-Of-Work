@@ -71,7 +71,7 @@ import type { TasksFacts } from './tasks'
 import {
   abandonStale, addOpenQuestion, brief, bump, cacheOf, recordLesson, checkReviewDiff, currentBranch, envFor, factsOf, filesUnder, forget, git, heldMainRoot, heldPolicy, coverageNow, locate, look, loopOf, markError,
   metrics, modeInForce, modeOf, note, outputPath, policyInForce, questionsOf, readFeatures, record, refresh, remoteOf, restore, runFeatures, save, saveCache, sectionOf,
-  setSection, settingsDraftOf, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, updateSettingsDraft, verifyNow, withGlobs, withSnapshot, placesOf,
+  setSection, settingsDraftOf, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, updateSettingsDraft, verifyNow, withGlobs, withSnapshot, placesOf, judgeFeatureCheck,
 } from './state'
 import type { Engine, Place } from './state'
 import { fixAdvice, RULES } from './templates'
@@ -83,6 +83,7 @@ const FEATURE_CHECK = 'mcp__devloop__feature_check'
 const STATUS = 'mcp__devloop__devloop_status'
 const REVIEW = 'mcp__devloop__devloop_review'
 const BLOCKED = 'mcp__devloop__devloop_blocked'
+const ADD_CHECK = 'mcp__devloop__devloop_add_check'
 const HANDOFF = 'mcp__devloop__devloop_handoff'
 const QUESTION = 'mcp__devloop__devloop_question'
 const PAPERCUT = 'mcp__devloop__devloop_papercut'
@@ -130,6 +131,20 @@ export const TOOL_SPECS = [
     description:
       'Asks for an independent review round on the change as it stands. Call it once, when the whole change is done, not after each step. The harness starts a separate read-only reviewer in a fresh context when the change has some risk, its tree is not yet reviewed, rounds are left and none is running, and answers in one line; it runs and waits on no tests. Do not edit files until the verdict arrives.',
     inputSchema: { type: 'object', properties: {} },
+    isDeferred: true,
+  },
+  {
+    name: 'devloop_add_check',
+    description:
+      'Adds a test command to devloop.json\'s verify list: how this repository proves its work. It only adds (it never removes or loosens a check). Use it when the verify list is empty or misses how the repository is tested. Mark a suite that takes more than a minute background: true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        run: { type: 'string', description: 'The command, exactly as a person would run it from the repository root' },
+        background: { type: 'boolean', description: 'true for a slow suite: it then runs in the background with no time limit' },
+      },
+      required: ['run'],
+    },
     isDeferred: true,
   },
   {
@@ -774,7 +789,8 @@ async function afterTurn($: Engine, isPerson: boolean): Promise<void> {
     return
   }
   await sweepLearning($, at, cfg).catch(() => undefined)
-  if (cfg.learning.auto !== 'off') {
+  // The proposer runs at a turn's end only when the policy asks for it (learning.at "turn"); by default it waits for the change to close.
+  if (cfg.learning.auto !== 'off' && cfg.learning.at === 'turn') {
     await maybePropose($, at, cfg, 'turn', isPerson)
   }
 }
@@ -1809,6 +1825,42 @@ export const register: Register = on => {
 
   // A clean way to stop: the builder says what blocks it, the person hears it,
   // and the stop gate lets the turn end.
+  // The agent may tighten the policy, never loosen it: it adds a verify check, and only a person removes one.
+  on('tool.run', { tool: ADD_CHECK }, async ($, e) => {
+    const at = await locate($)
+    const run = String(e.run ?? '').trim()
+    if (!at.isOptedIn || at.text === null) {
+      return { result: 'This repository has no devloop.json in its working tree, so nothing was added.' }
+    }
+    if (e.agentId !== undefined) {
+      return { result: 'Only the main agent adds checks.' }
+    }
+    if (run === '' || run.length > 300 || run.includes('\n')) {
+      return { result: 'Not added: give one command on one line, under 300 characters.' }
+    }
+    const policy = await policyInForce($, at)
+    if (policy === null) {
+      return { result: 'Not added: devloop.json could not be read.' }
+    }
+    const refused = await judgeFeatureCheck($, at, policy.cfg, await loopOf($), run)
+    if (refused !== null) {
+      return { result: `Not added: the guards refuse this command (${refused.rule}): ${refused.reason}` }
+    }
+    // Read fresh: a check added a moment ago must count (the place's copy may be cached).
+    const raw = JSON.parse(await $.fs.read(`${at.root}/devloop.json`)) as { verify?: unknown[] }
+    const verify = Array.isArray(raw.verify) ? raw.verify : []
+    if (verify.some(one => (typeof one === 'string' ? one : (one as { run?: string }).run) === run)) {
+      return { result: `\`${run}\` is already a check.` }
+    }
+    raw.verify = [...verify, e.background === true ? { run, background: true } : run]
+    await $.fs.write(`${at.root}/devloop.json`, `${JSON.stringify(raw, null, 2)}\n`)
+    await audit($, at.root, 'settings-changed', { kind: 'agent', name: 'builder' }, 'verify', null, `added ${run}${e.background === true ? ' (background)' : ''}`)
+    const effect = effectLine(policy.cfg.defaultBranch, policy.source === 'base', true)
+    $.ui.toast(`devloop: the agent added a test check: ${run}${e.background === true ? ' (background)' : ''}. ${effect}`, { timeoutMs: 15_000 })
+
+    return { result: `Added \`${run}\`${e.background === true ? ' as a background check' : ''}. ${effect}` }
+  }).catch(() => ({ result: 'devloop: the check could not be added.' }))
+
   on('tool.run', { tool: BLOCKED }, async ($, e) => {
     const at = await locate($)
     const reason = String(e.reason ?? '').trim().slice(0, 500) || '(no reason given)'

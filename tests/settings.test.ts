@@ -14,7 +14,7 @@ describe('settings model', () => {
     expect(row('mode').current).toBe('observe')
     expect(row('approvals').current).toBe('two')
     expect(row('grounding').current).toBe('same')
-    expect(row('learning').current).toBe('off')
+    expect(row('learning').current).toBe('trial')
     expect(row('tests').current).toBe('npm test')
   })
   test('approvals: {0,1,1} is me, {0,1,2} two, anything else custom', () => {

@@ -128,7 +128,7 @@ export function policyFacts(cfg: Config, mode: 'enforce' | 'observe'): string {
   const parts = [
     fast.length > 0
       ? `when you stop after changing files the harness runs ${fast.join(', ')}; run them yourself first.`
-      : background.length > 0 ? '' : 'no verify commands are set in devloop.json: say so in your report.',
+      : background.length > 0 ? '' : 'no verify commands are set in devloop.json: find how this repository runs its tests (package.json scripts, a Makefile, a tests/ folder, the README) and add each with the devloop_add_check tool (a suite slower than a minute with background: true). It only adds checks.',
     background.length > 0
       ? `${background.join(', ')} run${background.length === 1 ? 's' : ''} in the background after your stops, with no time limit; only shipping waits for ${background.length === 1 ? 'it' : 'them'}.`
       : '',

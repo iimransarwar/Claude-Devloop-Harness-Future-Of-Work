@@ -22,7 +22,7 @@ import type { Dollar, World } from './world'
 
 const DAY = 24 * 60 * 60 * 1000
 // Learning runs by itself only when a policy opts in (the default is "off"): these tests opt in.
-const LEARN = { ...CONFIG, learning: { auto: 'trial' } }
+const LEARN = { ...CONFIG, learning: { auto: 'trial', at: 'turn' } }
 const AGENT = { kind: 'plugin', name: 'agent' } as const
 const loopIn = (w: World): Loop => (w.store['loop:/repo'] as { value: Loop }).value
 const learnedIn = (w: World): Learned => learnedOf(w.store['learning:/repo'])
@@ -46,18 +46,18 @@ const withTrial = (w: World, over: Partial<LearnedRule> = {}): void => {
 }
 const logLine = ($: Dollar) => $.tool.call({ tool: 'Edit', file_path: '/repo/src/a.ts', old_string: 'a', new_string: 'console.log(a)' })
 const RULE_LINE = 'P1 | refusal:protected | rule | src/** | console\\.log | use the logger | evals/tasks/no-log.json: an edit adding console.log is noted'
-const cfgOf = (learning: Partial<Config['learning']> = {}): Config => ({ ...DEFAULTS, learning: { ...DEFAULTS.learning, auto: 'trial', ...learning } })
+const cfgOf = (learning: Partial<Config['learning']> = {}): Config => ({ ...DEFAULTS, learning: { ...DEFAULTS.learning, auto: 'trial', at: 'turn', ...learning } })
 
 // ---------------------------------------------------------------- policy
 
 describe('the policy: learning and models.learner (decision 5)', () => {
   test('defaults, values, and errors by field', () => {
-    expect(parseConfig('{}').cfg.learning).toEqual({ auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 })
+    expect(parseConfig('{}').cfg.learning).toEqual({ auto: 'trial', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3, at: 'close' })
     expect(parseConfig('{}').cfg.models.learner).toBe(null)
     const set = parseConfig('{"learning":{"auto":"propose","repeats":5,"promoteHits":1,"maxTrial":0,"maxRuns":10},"models":{"learner":"haiku"}}')
-    expect([set.cfg.learning, set.cfg.models.learner, set.errors]).toEqual([{ auto: 'propose', repeats: 5, promoteHits: 1, maxTrial: 0, maxRuns: 10 }, 'haiku', []])
+    expect([set.cfg.learning, set.cfg.models.learner, set.errors]).toEqual([{ auto: 'propose', repeats: 5, promoteHits: 1, maxTrial: 0, maxRuns: 10, at: 'close' }, 'haiku', []])
     const wrong = parseConfig('{"learning":{"auto":"always","repeats":0,"promoteHits":101,"x":1}}')
-    expect(wrong.cfg.learning).toEqual({ auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 })
+    expect(wrong.cfg.learning).toEqual({ auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3, at: 'close' })
     expect(wrong.errors).toEqual(['learning.x: unknown field', 'learning.auto: expected "off", "propose" or "trial"; using "off"', 'learning.repeats: expected a number from 1 to 100; using 3', 'learning.promoteHits: expected a number from 0 to 100; using 3'])
     expect(parseConfig('{"learning":"on"}').cfg.learning.auto).toBe('off')
   })
@@ -156,7 +156,7 @@ describe('learn runs by itself (decision 2)', () => {
   })
 
   test('no run on a turn no person started, past maxRuns, or with the budget spent', async ($, on) => {
-    const w = world(on, { ...LEARN, learning: { auto: 'trial', maxRuns: 1 } })
+    const w = world(on, { ...LEARN, learning: { auto: 'trial', at: 'turn', maxRuns: 1 } })
     w.store['ledger:/repo'] = repeats()
     await start($)
     // A turn no person's prompt started (a background wake): nothing.

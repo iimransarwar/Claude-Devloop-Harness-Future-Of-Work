@@ -412,6 +412,7 @@ declare module 'claude-code' {
     mcp__devloop__devloop_status: { detail?: boolean }
     mcp__devloop__devloop_review: Record<never, never>
     mcp__devloop__devloop_blocked: { reason: string }
+    mcp__devloop__devloop_add_check: { run: string; background?: boolean }
     mcp__devloop__devloop_handoff: {
       objective: string
       decisions?: string[]

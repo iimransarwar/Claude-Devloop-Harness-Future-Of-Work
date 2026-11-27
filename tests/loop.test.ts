@@ -569,7 +569,7 @@ test('the status tool reads the gate for the builder and changes nothing', async
   // C1: every tool is registered at load, the handoff and question tools too.
   // C2: the papercut tool too.
   // The agent-driven review: the review tool too, beside the status tool.
-  expect(w.tools).toEqual(['mcp__devloop__feature_check', 'mcp__devloop__devloop_status', 'mcp__devloop__devloop_review', 'mcp__devloop__devloop_blocked', 'mcp__devloop__devloop_handoff', 'mcp__devloop__devloop_question', 'mcp__devloop__devloop_papercut', 'mcp__devloop__devloop_claim', 'mcp__devloop__devloop_release', 'mcp__devloop__devloop_library'])
+  expect(w.tools).toEqual(['mcp__devloop__feature_check', 'mcp__devloop__devloop_status', 'mcp__devloop__devloop_review', 'mcp__devloop__devloop_add_check', 'mcp__devloop__devloop_blocked', 'mcp__devloop__devloop_handoff', 'mcp__devloop__devloop_question', 'mcp__devloop__devloop_papercut', 'mcp__devloop__devloop_claim', 'mcp__devloop__devloop_release', 'mcp__devloop__devloop_library'])
 
   await edit($, '/repo/src/a.ts')
   change(w, 'src/a.ts')
