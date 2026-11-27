@@ -240,7 +240,8 @@ export const DEFAULTS: Config = {
   grounding: { mode: null, fresh: 'turn', also: [], never: [] },
   loop: { failedRounds: 6 },
   testing: { scope: 'targeted' },
-  learning: { auto: 'trial', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
+  // Learning runs only when a person asks (/devloop learn): a proposer at the end of turns costs time nobody asked for.
+  learning: { auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
   library: { save: 'auto' },
 }
 

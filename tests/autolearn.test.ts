@@ -21,6 +21,8 @@ import type { Dollar, World } from './world'
 // and old stored state.
 
 const DAY = 24 * 60 * 60 * 1000
+// Learning runs by itself only when a policy opts in (the default is "off"): these tests opt in.
+const LEARN = { ...CONFIG, learning: { auto: 'trial' } }
 const AGENT = { kind: 'plugin', name: 'agent' } as const
 const loopIn = (w: World): Loop => (w.store['loop:/repo'] as { value: Loop }).value
 const learnedIn = (w: World): Learned => learnedOf(w.store['learning:/repo'])
@@ -44,13 +46,13 @@ const withTrial = (w: World, over: Partial<LearnedRule> = {}): void => {
 }
 const logLine = ($: Dollar) => $.tool.call({ tool: 'Edit', file_path: '/repo/src/a.ts', old_string: 'a', new_string: 'console.log(a)' })
 const RULE_LINE = 'P1 | refusal:protected | rule | src/** | console\\.log | use the logger | evals/tasks/no-log.json: an edit adding console.log is noted'
-const cfgOf = (learning: Partial<Config['learning']> = {}): Config => ({ ...DEFAULTS, learning: { ...DEFAULTS.learning, ...learning } })
+const cfgOf = (learning: Partial<Config['learning']> = {}): Config => ({ ...DEFAULTS, learning: { ...DEFAULTS.learning, auto: 'trial', ...learning } })
 
 // ---------------------------------------------------------------- policy
 
 describe('the policy: learning and models.learner (decision 5)', () => {
   test('defaults, values, and errors by field', () => {
-    expect(parseConfig('{}').cfg.learning).toEqual({ auto: 'trial', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 })
+    expect(parseConfig('{}').cfg.learning).toEqual({ auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 })
     expect(parseConfig('{}').cfg.models.learner).toBe(null)
     const set = parseConfig('{"learning":{"auto":"propose","repeats":5,"promoteHits":1,"maxTrial":0,"maxRuns":10},"models":{"learner":"haiku"}}')
     expect([set.cfg.learning, set.cfg.models.learner, set.errors]).toEqual([{ auto: 'propose', repeats: 5, promoteHits: 1, maxTrial: 0, maxRuns: 10 }, 'haiku', []])
@@ -69,7 +71,7 @@ describe('the policy: learning and models.learner (decision 5)', () => {
 
 describe('lessons write themselves (decision 1)', () => {
   test('the loop limit leaves one lesson per branch: the rounds, the checks, the file named most; again raises its count', async ($, on) => {
-    const w = world(on, { ...CONFIG, loop: { failedRounds: 2 } })
+    const w = world(on, { ...LEARN, loop: { failedRounds: 2 } })
     w.exits['npm test'] = 1
     await start($)
     await prompt($)
@@ -96,7 +98,7 @@ describe('lessons write themselves (decision 1)', () => {
   })
 
   test('the same check failing twice in a row with the same fingerprint leaves one lesson: the command and the first error line', async ($, on) => {
-    const w = world(on, { ...CONFIG, maxFixRounds: 5 })
+    const w = world(on, { ...LEARN, maxFixRounds: 5 })
     w.exits['npm test'] = 1
     w.outputs['npm test'] = 'FAIL src/a.test.ts\n  expected 1, got 2'
     await start($)
@@ -118,7 +120,7 @@ describe('lessons write themselves (decision 1)', () => {
     expect(repeatLesson('npm test', 'abc', '\nError: boom\nmore').detail).toBe('`npm test` failed twice in a row the same way: Error: boom')
     expect(limitLesson('main', { branch: 'main', failed: 3, grant: null, isTold: false, lastPass: null, rounds: [{ at: 1, kind: 'review', what: 'round 1', files: ['a.ts'] }, { at: 2, kind: 'fix', what: 'npm test', files: [] }, { at: 3, kind: 'review', what: 'round 2', files: ['a.ts', 'b.ts'] }] }).detail)
       .toMatch(/checks that failed: npm test; file named most often in the findings: a.ts \(2 rounds\)/)
-    const w = world(on)
+    const w = world(on, LEARN)
     await start($)
     expect(await devloop($, 'lesson the staging host is not prod')).toMatch(/Recorded/)
     expect(lessons(w).map(one => [one.key, one.auto])).toEqual([['the staging host is not prod', undefined]])
@@ -129,7 +131,7 @@ describe('lessons write themselves (decision 1)', () => {
 
 describe('learn runs by itself (decision 2)', () => {
   test('at `repeats` the proposer starts at the end of the turn, never in the middle of it, and once per group', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     await start($)
     await prompt($)
     for (let i = 0; i < 3; i += 1) {
@@ -154,7 +156,7 @@ describe('learn runs by itself (decision 2)', () => {
   })
 
   test('no run on a turn no person started, past maxRuns, or with the budget spent', async ($, on) => {
-    const w = world(on, { ...CONFIG, learning: { maxRuns: 1 } })
+    const w = world(on, { ...LEARN, learning: { auto: 'trial', maxRuns: 1 } })
     w.store['ledger:/repo'] = repeats()
     await start($)
     // A turn no person's prompt started (a background wake): nothing.
@@ -172,7 +174,7 @@ describe('learn runs by itself (decision 2)', () => {
   })
 
   test('no run with the budget spent, or while a review runs', async ($, on) => {
-    const w = world(on, { ...CONFIG, budgetUsd: 1 })
+    const w = world(on, { ...LEARN, budgetUsd: 1 })
     w.store['ledger:/repo'] = repeats()
     w.cost = 5
     await start($)
@@ -188,7 +190,7 @@ describe('learn runs by itself (decision 2)', () => {
   })
 
   test('a new session starts the count of runs over; old stored state reads as fresh', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     w.store['loop:/repo'] = { shape: 'loop-11', value: { ...FRESH, root: '/repo', sessionId: 'earlier', phase: 'build', spec: 'old' } }
     await start($)
     expect(loopIn(w).phase).toBe('idle')
@@ -199,7 +201,7 @@ describe('learn runs by itself (decision 2)', () => {
   })
 
   test('/devloop done starts a run while a repeat waits, once per group', async ($, on) => {
-    const v = world(on)
+    const v = world(on, LEARN)
     v.store['ledger:/repo'] = repeats()
     await start($)
     await devloop($, 'done')
@@ -210,7 +212,7 @@ describe('learn runs by itself (decision 2)', () => {
   })
 
   test('the answer: good lines are kept, a bad one dropped and counted, the person told once with counts only', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     w.store['ledger:/repo'] = repeats()
     w.tracked = ['src/a.ts']
     w.files['/repo/src/a.ts'] = 'export const a = 1\n'
@@ -295,7 +297,7 @@ describe('proposed rules start on trial (decision 3)', () => {
   })
 
   test('too broad, across the tracked files its globs match: it waits, with the reason', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     w.store['ledger:/repo'] = repeats()
     w.tracked = ['src/a.ts', 'lib/b.ts']
     w.files['/repo/src/a.ts'] = 'const x = 1\n'.repeat(201)
@@ -309,7 +311,7 @@ describe('proposed rules start on trial (decision 3)', () => {
   })
 
   test('a trial rule records a hit (path, line number, fingerprint) and refuses nothing, says nothing, adds nothing', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     w.files['/repo/src/a.ts'] = 'a'
     withTrial(w)
     await start($)
@@ -334,7 +336,7 @@ describe('proposed rules start on trial (decision 3)', () => {
   test('a pattern the engine rejects, or a glob that cannot be read, gives no hit and never an error', async ($, on) => {
     expect(judgeLearned('src/a.ts', '', 'x(', [{ id: 'learn-1', when: ['src/**'], pattern: '(', action: 'note', why: '' }])).toEqual([])
     expect(judgeLearned('src/a.ts', '', 'x', [{ id: 'learn-1', when: [null as unknown as string], pattern: 'x', action: 'note', why: '' }])).toEqual([])
-    const w = world(on)
+    const w = world(on, LEARN)
     w.files['/repo/src/a.ts'] = 'a'
     withTrial(w, { pattern: '(' })
     await start($)
@@ -345,7 +347,7 @@ describe('proposed rules start on trial (decision 3)', () => {
   test('removed by itself after pruneWindowDays with no hit, and tombstoned under its group', async ($, on) => {
     const swept = sweepLearned({ ...EMPTY_LEARNED, rules: [trial({ at: 0 }), trial({ id: 'learn-2', at: 0, last: 20 * DAY })] }, { ...DEFAULTS, pruneWindowDays: 30 }, 31 * DAY)
     expect([swept.expired, swept.learned.rules.map(one => one.id), swept.stones]).toEqual([['learn-1'], ['learn-2'], [{ id: 'refusal:protected', evidence: 'trial rule learn-1 had no hit in 30 days', at: 31 * DAY }]])
-    const w = world(on)
+    const w = world(on, LEARN)
     withTrial(w)
     w.now = 1000 + 31 * DAY
     await start($)
@@ -358,7 +360,7 @@ describe('proposed rules start on trial (decision 3)', () => {
 
 describe('a person only promotes (decision 4)', () => {
   test('the notice comes once, at promoteHits', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     w.files['/repo/src/a.ts'] = 'a'
     withTrial(w)
     await start($)
@@ -371,7 +373,7 @@ describe('a person only promotes (decision 4)', () => {
   })
 
   test('/devloop rules and promote are refused for an agent; after a person\'s yes the rule refuses at once, audited, with the policy entry', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     w.files['/repo/src/a.ts'] = 'a'
     withTrial(w, { hits: 3, seen: [{ path: 'src/a.ts', line: 1, fp: 'f', at: 1 }] })
     await start($)
@@ -395,7 +397,7 @@ describe('a person only promotes (decision 4)', () => {
   })
 
   test('a promoted rule the base policy has by id is dropped from the state at session start', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     withTrial(w, { status: 'promoted', promotedAt: 1 })
     w.basePolicy = JSON.stringify({ ...CONFIG, rules: [{ id: 'learn-1', when: ['src/**'], pattern: 'console\\.log', action: 'refuse', why: 'use the logger' }] })
     await start($)
@@ -403,7 +405,7 @@ describe('a person only promotes (decision 4)', () => {
   })
 
   test('promote says the policy has the id, and drops the state copy', async ($, on) => {
-    const v = world(on)
+    const v = world(on, LEARN)
     v.basePolicy = JSON.stringify({ ...CONFIG, rules: [{ id: 'learn-1', when: ['src/**'], pattern: 'x', action: 'note', why: 'y' }] })
     await start($)
     // Kept after the session's upkeep ran: the policy came to have the id while it was on trial.
@@ -415,7 +417,7 @@ describe('a person only promotes (decision 4)', () => {
   })
 
   test('/devloop rules drop removes a rule or a proposal, writes a tombstone, and is audited', async ($, on) => {
-    const w = world(on)
+    const w = world(on, LEARN)
     withTrial(w)
     await start($)
     expect(await devloop($, 'rules drop learn-1 fires on test fixtures', AGENT)).toMatch(/a person's/)
