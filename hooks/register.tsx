@@ -43,6 +43,7 @@ import { auditLine, clip } from './records'
 import type { Actor, AuditEvent } from './records'
 import { abandonBackground, startBackground } from './background'
 import { approvalsFor, approvers, featureCounts, gate, isShippable, tierFor } from './gate'
+import { backgroundNotice } from './testruns'
 import { digest, infraAdvice } from './output'
 import { formatFinding } from './findings'
 import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewerChecks } from './review'
@@ -326,10 +327,11 @@ async function wake($: Engine): Promise<Place> {
 /**
  * What every stop that ends the turn does: start the background checks
  * that have no result on the tree (rule 3), never waiting on one. A failure
- * to start them is logged, never a held stop.
+ * to start them is logged, never a held stop. `isIdle` says, when a run
+ * ends, whether the main loop has no turn going (rule 2).
  */
-async function atTurnEnd($: Engine, at: Place, cfg: Config, tree: string | null): Promise<void> {
-  await startBackground($, at, cfg, tree).catch((error: unknown) => {
+async function atTurnEnd($: Engine, at: Place, cfg: Config, tree: string | null, isIdle: () => boolean): Promise<void> {
+  await startBackground($, at, cfg, tree, isIdle).catch((error: unknown) => {
     $.ui.log(`devloop: the background checks could not be started: ${String(error)}`, { to: 'debug' })
   })
 }
@@ -916,6 +918,8 @@ async function buildClaims($: Engine, at: Place, loop: Loop): Promise<{ claims: 
 export const register: Register = on => {
   /** The main loop's turn in progress, so exemptions bind to it and end with it. */
   let turnId: string | null = null
+  /** Whether the main loop has no turn going: a background failure may wake it then (rule 2). */
+  const isIdle = (): boolean => turnId === null
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -1051,6 +1055,8 @@ export const register: Register = on => {
     sources.push({ key: 'policy', label: 'policy', priority: 1, text: policyFacts(cfg, modeInForce(at) === 'observe' ? 'observe' : 'enforce') })
     // The checks that apply to the files this change touched (DESIGN 4.16, decision 6).
     sources.push({ key: 'checks', label: 'checks for what you changed', priority: 1, text: checksForChange(cfg, loop.changed) })
+    // What the background checks did on this tree since the agent last heard (rule 2): running, passed, failed or unable to run.
+    sources.push({ key: 'tests', label: 'background tests', priority: 1, text: backgroundNotice(loop, cfg, now) })
     if (!live.thread.isBriefed && isOpen) {
       // A session that starts cold on an open change: told once (DESIGN 4.7), and marked told only once it is sent (F10).
       sources.push({ key: 'briefing', label: 'cold-start briefing', priority: 1, text: briefing(await briefFacts($, at, loop)), isEphemeral: true })
@@ -1096,11 +1102,18 @@ export const register: Register = on => {
 
   // A /clear ends the thread: the next prompt starts a new one, briefed again.
   on('session.end', async ($, e, next) => {
+    const at = await locate($).catch(() => null)
+    // A background run ends with the session (a /clear included, which starts no session.start): it is
+    // dropped before the engine ends its child, so it is never recorded as killed, and starts again at the next stop.
+    if (at !== null && at.isOptedIn) {
+      await abandonBackground($, at).catch((error: unknown) => {
+        $.ui.log(`devloop: the background runs could not be dropped at the session's end: ${String(error)}`, { to: 'debug' })
+      })
+    }
     // The session ends: the polling of follow-ups stops; their record stays for a later session (D2).
     if (e.reason !== 'clear') {
       stopFollowTimer()
       // Its seat's claims are released only where another seat waits for them; the rest lapse with their lease (final round, D2 F4).
-      const at = await locate($).catch(() => null)
       if (at !== null && at.isOptedIn) {
         await releaseAtSessionEnd($, at).catch(() => 0)
       }
@@ -1876,7 +1889,7 @@ export const register: Register = on => {
     const cfg = ((await policyInForce($, at, snap)) ?? first).cfg
     // The loop limit (DESIGN 4.16): at the limit the turn may end, once, with its message added; nothing more is handed back.
     const limited = async (result: typeof below): Promise<typeof below> => {
-      await atTurnEnd($, at, cfg, snap.tree)
+      await atTurnEnd($, at, cfg, snap.tree, isIdle)
       await notePassing($, at, snap).catch(() => undefined)
       const told = await reachLimit($, at, cfg, snap.branch)
 
@@ -1910,7 +1923,7 @@ export const register: Register = on => {
     if (ran.infra !== null && ran.failed !== null) {
       const advice = infraAdvice(ran.failed, ran.infra, cfg.verifyTimeoutSec)
       $.ui.toast(`devloop: ${advice}`, { timeoutMs: 15_000 })
-      await atTurnEnd($, at, cfg, snap.tree)
+      await atTurnEnd($, at, cfg, snap.tree, isIdle)
 
       return { ...below, additionalContext: [...(below.additionalContext ?? []), `devloop: verification could not run, so the stop is not blocked and no fix round is spent. ${advice}`] }
     }
@@ -1942,7 +1955,7 @@ export const register: Register = on => {
     }
     // While a spec is written its tests are expected to fail: the result is recorded, nothing is blocked.
     if (after.phase === 'spec') {
-      await atTurnEnd($, at, cfg, snap.tree)
+      await atTurnEnd($, at, cfg, snap.tree, isIdle)
 
       return below
     }
@@ -2233,7 +2246,9 @@ export const register: Register = on => {
     const loop = await loopOf($)
     const at = await look($)
     const policy = heldPolicy(at)
-    const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)))
+    // The time, so a background run says how long it has gone; a clock that cannot be read names no time.
+    const now = await $.clock.now().catch(() => undefined)
+    const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)), now)
     if (parts === null) {
       return next(e)
     }

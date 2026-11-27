@@ -4355,6 +4355,74 @@ function contentReason(hit, path) {
 // hooks/findings.ts
 var openBlocking = (findings, reviewer) => findings.filter((one) => one.status === "open" && one.isBlocking && (reviewer === undefined || one.reviewer === reviewer));
 
+// hooks/output.ts
+var ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
+var stripAnsi = (text) => text.replace(ANSI, "");
+function tail(text, lines = 40, chars = 4000) {
+  const kept = text.trimEnd().split(`
+`).slice(-lines).join(`
+`);
+  return kept.length > chars ? `…${kept.slice(-chars)}` : kept;
+}
+var ERROR = /\berror\b|\bFAIL(ED)?\b|Error:|panicked|Traceback/i;
+var RUNTIME_FRAME = /^\s*at\s.*(?:\(node:|\bnode:internal\/)|^\s*at node:|^\s*File "<frozen [^>]*>"|^\s*(?:async\s+)?[\w$.<>[\]]+(?:\s\[as [\w$]+\])?\s\(node:[^)]*\)\s*$|^\s*(?:async\s+)?node:internal\//;
+function distill(text, errorLines = 12, tailLines = 30, chars = 4000) {
+  const lines = stripAnsi(text).trimEnd().split(`
+`).filter((line) => !RUNTIME_FRAME.test(line));
+  const from = Math.max(0, lines.length - tailLines);
+  const errors = lines.slice(0, from).filter((line) => ERROR.test(line)).slice(0, errorLines);
+  const end = tail(lines.slice(from).join(`
+`), tailLines, errors.length > 0 ? Math.floor(chars / 2) : chars);
+  if (errors.length === 0) {
+    return end;
+  }
+  const head = errors.join(`
+`);
+  return `${head.length > chars / 2 ? `${head.slice(0, chars / 2)}…` : head}
+…
+${end}`;
+}
+function hash(text) {
+  let a = 3735928559;
+  let b = 1103547991;
+  for (let i = 0;i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 2654435761);
+    b = Math.imul(b ^ c, 1597334677);
+  }
+  a = Math.imul(a ^ a >>> 16, 2246822507) ^ Math.imul(b ^ b >>> 13, 3266489909);
+  b = Math.imul(b ^ b >>> 16, 2246822507) ^ Math.imul(a ^ a >>> 13, 3266489909);
+  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(16).padStart(14, "0");
+}
+var digest = (text) => hash(text);
+function classify(code, _output = "") {
+  if (code === 0) {
+    return "pass";
+  }
+  if (code === 127 || code === 126) {
+    return "not-found";
+  }
+  if (code === 124 || code < 0) {
+    return "timeout";
+  }
+  if ([130, 134, 137, 143].includes(code)) {
+    return "killed";
+  }
+  return "fail";
+}
+function infraAdvice(command, outcome, timeoutSec) {
+  switch (outcome) {
+    case "not-found":
+      return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`;
+    case "timeout":
+      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.`;
+    case "killed":
+      return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`;
+    default:
+      return "";
+  }
+}
+
 // hooks/testruns.ts
 function ago(ms) {
   const minutes = Math.floor(Math.max(0, ms) / 60000);
@@ -4660,74 +4728,6 @@ var approvalsFor = (tier, cfg) => tier === "none" ? 0 : cfg.approvals[tier];
 function approvers(tier, cfg) {
   const n = approvalsFor(tier, cfg);
   return n === 0 ? "merge once the gate is green" : n === 1 ? "one person other than the author approves and merges" : `${n === 2 ? "two" : n} people approve and merge`;
-}
-
-// hooks/output.ts
-var ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
-var stripAnsi = (text) => text.replace(ANSI, "");
-function tail(text, lines = 40, chars = 4000) {
-  const kept = text.trimEnd().split(`
-`).slice(-lines).join(`
-`);
-  return kept.length > chars ? `…${kept.slice(-chars)}` : kept;
-}
-var ERROR = /\berror\b|\bFAIL(ED)?\b|Error:|panicked|Traceback/i;
-var RUNTIME_FRAME = /^\s*at\s.*(?:\(node:|\bnode:internal\/)|^\s*at node:|^\s*File "<frozen [^>]*>"|^\s*(?:async\s+)?[\w$.<>[\]]+(?:\s\[as [\w$]+\])?\s\(node:[^)]*\)\s*$|^\s*(?:async\s+)?node:internal\//;
-function distill(text, errorLines = 12, tailLines = 30, chars = 4000) {
-  const lines = stripAnsi(text).trimEnd().split(`
-`).filter((line) => !RUNTIME_FRAME.test(line));
-  const from = Math.max(0, lines.length - tailLines);
-  const errors = lines.slice(0, from).filter((line) => ERROR.test(line)).slice(0, errorLines);
-  const end = tail(lines.slice(from).join(`
-`), tailLines, errors.length > 0 ? Math.floor(chars / 2) : chars);
-  if (errors.length === 0) {
-    return end;
-  }
-  const head = errors.join(`
-`);
-  return `${head.length > chars / 2 ? `${head.slice(0, chars / 2)}…` : head}
-…
-${end}`;
-}
-function hash(text) {
-  let a = 3735928559;
-  let b = 1103547991;
-  for (let i = 0;i < text.length; i += 1) {
-    const c = text.charCodeAt(i);
-    a = Math.imul(a ^ c, 2654435761);
-    b = Math.imul(b ^ c, 1597334677);
-  }
-  a = Math.imul(a ^ a >>> 16, 2246822507) ^ Math.imul(b ^ b >>> 13, 3266489909);
-  b = Math.imul(b ^ b >>> 16, 2246822507) ^ Math.imul(a ^ a >>> 13, 3266489909);
-  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(16).padStart(14, "0");
-}
-var digest = (text) => hash(text);
-function classify(code, _output = "") {
-  if (code === 0) {
-    return "pass";
-  }
-  if (code === 127 || code === 126) {
-    return "not-found";
-  }
-  if (code === 124 || code < 0) {
-    return "timeout";
-  }
-  if ([130, 134, 137, 143].includes(code)) {
-    return "killed";
-  }
-  return "fail";
-}
-function infraAdvice(command, outcome, timeoutSec) {
-  switch (outcome) {
-    case "not-found":
-      return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`;
-    case "timeout":
-      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.`;
-    case "killed":
-      return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`;
-    default:
-      return "";
-  }
 }
 
 // hooks/weaken.ts

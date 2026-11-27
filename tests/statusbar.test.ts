@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Loop } from '../types'
 import { DEFAULTS } from '../hooks/config'
-import type { Step } from '../hooks/config'
+import type { Config, Step } from '../hooks/config'
 import { FRESH } from '../hooks/fresh'
 import type { Check } from '../hooks/gate'
 import { barParts } from '../hooks/statusbar'
@@ -40,6 +40,25 @@ test('failing tests are red; build phase shows features', () => {
 })
 test('low risk hides review', () => {
   expect(barParts({ ...FRESH, changed: ['README.md'] } as Loop, { ...DEFAULTS, verify: [step('x')] }, [])!.review).toBeNull()
+})
+test('the status bar shows a background run, then its result', () => {
+  const cfg = { ...DEFAULTS, verify: [{ run: 'slow', profile: 'fast', when: null, background: true }] } as Config
+  const at = { ...FRESH, tree: 't1', tier: 'medium', changed: ['src/a.ts'], verify: { ...FRESH.verify, status: 'pass', tree: 't1' } } as Loop
+  const failed = { tree: 't1', outcome: 'fail', at: 0, durationMs: 1, lines: 'x', isOlderTree: false, saved: null } as const
+  const running = { ...at, background: { slow: { tree: 't1', startedAt: 0 } } }
+  expect(barParts(running, cfg, [], 12 * 60_000)?.tests).toEqual({ text: 'running 12m…', color: 'warning' })
+  expect(barParts(running, cfg, [])?.tests).toEqual({ text: 'running…', color: 'warning' })
+  expect(barParts({ ...at, verify: { ...at.verify, runs: { slow: failed } } }, cfg, [])?.tests).toEqual({ text: '✗ failing', color: 'error' })
+  expect(barParts({ ...at, verify: { ...at.verify, passedOn: { slow: 't1' } } }, cfg, [])?.tests).toEqual({ text: '✓ passed', color: 'success' })
+})
+test('the bar says what the gate says: a background check that could not run, a foreground failure first, nothing on record after an edit', () => {
+  const cfg = { ...DEFAULTS, verify: [step('unit'), { run: 'slow', profile: 'fast', when: null, background: true }] } as Config
+  const at = { ...FRESH, tree: 't1', tier: 'medium', changed: ['src/a.ts'], verify: { ...FRESH.verify, status: 'pass', tree: 't1' } } as Loop
+  const could = { tree: 't1', outcome: 'not-found', at: 0, durationMs: 1, lines: 'x', isOlderTree: false, saved: null } as const
+  expect(barParts({ ...at, verify: { ...at.verify, runs: { slow: could } } }, cfg, [])?.tests).toEqual({ text: '! could not run', color: 'error' })
+  const running = { ...at, background: { slow: { tree: 't1', startedAt: 0 } } }
+  expect(barParts({ ...running, verify: { ...running.verify, status: 'fail', failed: 'unit' } }, cfg, [], 60_000)?.tests).toEqual({ text: '✗ failing', color: 'error' })
+  expect(barParts({ ...running, isDirty: true }, cfg, [], 60_000)?.tests).toEqual({ text: 'not run since the last change', color: 'warning' })
 })
 test('the pinned status line is no longer set (no doubled devloop:)', async ($, on) => {
   const w = world(on); await start($); await devloop($, 'status')

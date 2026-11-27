@@ -4,26 +4,31 @@
 // returns at once; the child runs on after the hook has returned, and when
 // it ends its result is recorded against the tree it started on, the record
 // the gate reads. One run per check at a time: a stop on a newer tree
-// cancels the run on the older one and starts again.
+// cancels the run on the older one and starts again. A run that ended is
+// told (rule 2): a failure on its tree as a toast, a failed round toward the
+// loop limit and, in enforce mode, a prompt that wakes an idle agent; never
+// a block.
 
 import type { HookStream, ProcessSpawnChunk, ProcessSpawnResult } from 'claude-code'
 
 import type { CheckRecord, Loop, Outcome } from '../types'
 import type { Config } from './config'
-import { isCoveredPass } from './limits'
-import { classify, distill } from './output'
+import { isAtLimit, isCoveredPass } from './limits'
+import { classify, distill, infraAdvice } from './output'
+import { countFailedRound, reachLimit } from './rounds'
 import { backgroundFor } from './rules'
 import { checkArgv, coveredKeys, credentialNames, keepOutput, loopOf, note, save, snapshot } from './state'
 import type { Engine, Place } from './state'
 import { ago } from './testruns'
 
-/** A run going in this process: its child, the tree it started on, the covered-files key there, and whether it was cancelled. */
+/** A run going in this process: its child, the tree it started on, the covered-files key there, whether it was cancelled, and whether the main loop is idle now. */
 type Live = {
   stream: HookStream<ProcessSpawnChunk, ProcessSpawnResult> | null
   tree: string
   startedAt: number
   key: string | null
   isCancelled: boolean
+  isIdle: () => boolean
 }
 
 /** The runs going in this process, by root and check. A `loop.background` entry with none here is dead: its child went with a session or the module. */
@@ -62,9 +67,11 @@ function cancel($: Engine, id: string): void {
  * result on `tree` nor a run going on it, after cancelling its run on another
  * tree. A check with `when` whose pass carries on the files it covers is not
  * run: its pass is recorded on `tree`. Returns the commands it started and
- * never waits on one; outside git (`tree` null) nothing starts.
+ * never waits on one; outside git (`tree` null) nothing starts. `isIdle`
+ * says, when a run ends, whether the main loop has no turn going, so a
+ * failure may wake it.
  */
-export async function startBackground($: Engine, at: Place, cfg: Config, tree: string | null): Promise<string[]> {
+export async function startBackground($: Engine, at: Place, cfg: Config, tree: string | null, isIdle: () => boolean): Promise<string[]> {
   if (tree === null) {
     return []
   }
@@ -90,7 +97,7 @@ export async function startBackground($: Engine, at: Place, cfg: Config, tree: s
       carried.push(step.run)
       continue
     }
-    const one: Live = { stream: null, tree, startedAt: now, key, isCancelled: false }
+    const one: Live = { stream: null, tree, startedAt: now, key, isCancelled: false, isIdle }
     live.set(id, one)
     started.push({ run: step.run, one, wasLive })
   }
@@ -256,7 +263,7 @@ async function finish($: Engine, at: Place, cfg: Config, run: string, one: Live,
   }
   const isHere = !record.isOlderTree
   const isPass = isHere && outcome === 'pass'
-  await save($, at.root, before => {
+  const after = await save($, at.root, before => {
     const covered = Object.fromEntries(Object.entries(before.verify.covered ?? {}).filter(([command]) => command !== run || !isHere))
     const verify = {
       ...before.verify,
@@ -266,5 +273,65 @@ async function finish($: Engine, at: Place, cfg: Config, run: string, one: Live,
     }
 
     return note({ ...before, verify, background: Object.fromEntries(Object.entries(before.background).filter(([command]) => command !== run)) }, 'verify', told(run, record), now)
+  })
+  await report($, at, cfg, run, record, after, snap.branch, one.isIdle)
+}
+
+/**
+ * What a run that ended tells the person and the agent (rule 2); never a
+ * block, and a pass tells no one (the agent reads it at its next prompt).
+ * One that could not run, or failed on an older tree, is a toast and
+ * nothing more. A failure on its tree is a toast and, outside the spec
+ * phase, one failed round toward the loop limit (never a fix round); in
+ * enforce mode, below the limit, an idle agent is woken to fix it, and at
+ * the limit the limit's message is added once instead.
+ */
+async function report($: Engine, at: Place, cfg: Config, run: string, record: CheckRecord, loop: Loop, branch: string | null, isIdle: () => boolean): Promise<void> {
+  if (record.outcome === 'pass') {
+    return
+  }
+  if (record.outcome !== 'fail') {
+    $.ui.toast(`devloop: ${infraAdvice(run, record.outcome, cfg.verifyTimeoutSec)}`, { timeoutMs: 15_000 })
+
+    return
+  }
+  if (record.isOlderTree) {
+    $.ui.toast(`devloop: the background check \`${run}\` failed on an older tree (the tree changed while it ran); it runs again at the next stop.`)
+
+    return
+  }
+  const took = ago(record.durationMs)
+  $.ui.toast(`devloop: the background check \`${run}\` failed on this tree (${took}).`)
+  // While a spec is written its checks are expected to fail: recorded and shown, nothing counted (Review Focus 4).
+  if (loop.phase === 'spec') {
+    return
+  }
+  const limit = await countFailedRound($, at.root, branch, { kind: 'fix', what: `${run} (background)`, files: [] })
+  const told = await reachLimit($, at, cfg, branch)
+  if (cfg.mode !== 'enforce') {
+    return
+  }
+  if (isAtLimit(limit, cfg)) {
+    // At the loop limit nothing more is handed back: the message once, appended (it wakes no turn), as a review round's is.
+    if (told !== null) {
+      await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: told }] } }).catch((error: unknown) => {
+        $.ui.log(`devloop: the loop limit's message could not be added: ${String(error)}`, { to: 'debug' })
+      })
+    }
+
+    return
+  }
+  if (!isIdle()) {
+    return
+  }
+  const text = [
+    `The background check \`${run}\` failed on this tree (it ran ${took}).`,
+    record.lines,
+    record.saved === null ? '' : `The whole output is in ${record.saved}.`,
+    'Fix the failure and stop; the check runs again in the background after your stop.',
+  ].filter(part => part !== '').join('\n')
+  // Resolves when that turn starts: never awaited, so a run's end waits on no turn.
+  void $.prompt.submit({ text }).catch((error: unknown) => {
+    $.ui.log(`devloop: the agent could not be woken for the background failure of ${run}: ${String(error)}`, { to: 'debug' })
   })
 }

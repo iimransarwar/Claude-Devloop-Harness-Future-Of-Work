@@ -11,9 +11,9 @@ import { infraAdvice } from '../hooks/output'
 import { checksFor } from '../hooks/portable'
 import { backgroundFor, stepsFor } from '../hooks/rules'
 import { FRESH } from '../hooks/state'
-import { ago } from '../hooks/testruns'
+import { ago, backgroundNotice, testStates } from '../hooks/testruns'
 import type { CheckRecord, Loop } from '../types'
-import { change, CONFIG, start, stop, world } from './world'
+import { bash, change, CONFIG, devloop, edit, prompt, start, stop, world } from './world'
 import type { Dollar, World } from './world'
 
 // Background checks (agent-driven review design, section 3 and rules 1, 3,
@@ -195,5 +195,121 @@ describe('a loop stored before background checks', () => {
   test('a shape older than that starts fresh, as before', async ($, on) => {
     const w = world(on, BG); w.store['loop:/repo'] = earlier('loop-11'); await start($)
     expect(loopIn(w)).toMatchObject({ phase: 'idle', findings: [], background: {} })
+  })
+})
+
+
+describe('what the agent and the person are told', () => {
+  const fail = async (w: World, output = 'FAIL tests/a.test.ts\nexpected 1 to be 2') => { w.now += 41 * 60_000; w.spawns[0]?.finish(1, output); await whenSettled() }
+  const told = (w: World): string => w.contexts.at(-1)?.join('\n') ?? ''
+  test('a failure on this tree: a toast, a failed round toward the loop limit, an idle agent woken, never a block', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w); await fail(w)
+    expect(w.toasts.at(-1)).toBe(`devloop: the background check \`${SLOW}\` failed on this tree (41m).`)
+    expect(w.submitted.at(-1)).toMatch(/^The background check `bash tests\/run-all\.sh` failed on this tree \(it ran 41m\)\.\nFAIL tests\/a\.test\.ts\nexpected 1 to be 2\nThe whole output is in .+\.log\.\nFix the failure and stop;/)
+    expect([loopIn(w).limit.failed, loopIn(w).verify.rounds]).toEqual([1, 0])
+    expect((await stop($)).block).toBeUndefined()
+    await prompt($)
+    expect(told(w)).toMatch(/`bash tests\/run-all\.sh` failed in the background on this tree \(41m\):\nFAIL tests\/a\.test\.ts/)
+  })
+  test('a busy agent is not woken', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    await $.turn.start({ turnId: 'busy' } as never); await fail(w)
+    expect(w.submitted).toEqual([])
+  })
+  test('observe mode wakes no one', async ($, on) => {
+    const w = world(on, { ...BG, mode: 'observe' }); await start($); await stopOn($, w); await fail(w)
+    expect(w.submitted).toEqual([])
+    expect(w.toasts.at(-1)).toMatch(/failed on this tree/)
+  })
+  test('at the loop limit nothing is handed back: the limit message is added once, and no one is woken', async ($, on) => {
+    const w = world(on, { ...BG, loop: { failedRounds: 1 } }); await start($); await stopOn($, w); await fail(w)
+    expect(w.submitted).toEqual([])
+    expect(w.appended.filter(one => /Loop limit: 1 failed round on this branch/.test(one)).length).toBe(1)
+  })
+  test('a failure on an older tree is shown as such, and neither counted nor woken', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w); change(w, 'src/b.ts'); await fail(w, 'boom')
+    expect(w.toasts.at(-1)).toBe(`devloop: the background check \`${SLOW}\` failed on an older tree (the tree changed while it ran); it runs again at the next stop.`)
+    expect([w.submitted, loopIn(w).limit.failed]).toEqual([[], 0])
+    await prompt($)
+    expect(told(w)).toMatch(/failed on an older tree \(the tree changed while it ran\), so it says nothing certain about this one:\nboom/)
+  })
+  test('Review Focus 4: while a spec is written a failure is recorded, and nothing is woken or counted', async ($, on) => {
+    const w = world(on, BG); await start($)
+    w.files['/repo/specs/login/SPEC.md'] = '# login'; await devloop($, 'spec login'); await stopOn($, w); await fail(w)
+    expect([w.submitted, loopIn(w).limit.failed, loopIn(w).verify.runs[SLOW]?.outcome]).toEqual([[], 0, 'fail'])
+  })
+  test('Review Focus 2: a check that cannot run is told with advice, not counted, and not restarted on the same tree', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    w.spawns[0]?.finish(127, 'bash: tests/run-all.sh: not found'); await whenSettled()
+    expect(w.toasts.at(-1)).toMatch(/^devloop: `bash tests\/run-all\.sh` could not run: its program was not found \(exit 127\)/)
+    expect([w.submitted, loopIn(w).limit.failed]).toEqual([[], 0])
+    await stop($)
+    expect(w.spawns.length).toBe(1)
+  })
+  test('a pass reaches the agent at its next prompt; no one is woken', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    w.now += 41 * 60_000; w.spawns[0]?.finish(0); await whenSettled()
+    expect(w.submitted).toEqual([])
+    await prompt($)
+    expect(told(w)).toMatch(/`bash tests\/run-all\.sh` passed in the background on this tree \(41m\)\./)
+  })
+  test('a push while the run goes is held with how long it has run, and starts no second run', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w); w.now += 14 * 60_000
+    expect((await bash($, 'git push -u origin feature')).deny).toMatch(/tests still running \(started 14m ago\): bash tests\/run-all\.sh/)
+    expect(w.spawns.length).toBe(1)
+  })
+  test('in observe mode that push is noted, not held', async ($, on) => {
+    const w = world(on, { ...BG, mode: 'observe' }); await start($); await stopOn($, w)
+    expect((await bash($, 'git push -u origin feature')).deny).toBeUndefined()
+  })
+  test('a session that ends (a /clear) drops the run, records nothing as killed, and the next stop starts it again', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} as never })
+    expect(w.spawns[0]?.isKilled).toBe(true)
+    await whenSettled()
+    expect([loopIn(w).background, loopIn(w).verify.runs[SLOW]]).toEqual([{}, undefined])
+    expect(loopIn(w).events.some(one => one.text === `background: ${SLOW} did not finish (the session or plugin ended); it starts again at the next stop`)).toBe(true)
+    await stop($)
+    expect(w.spawns.length).toBe(2)
+  })
+})
+
+describe('what each check last did on the tree', () => {
+  const cfg: Config = { ...DEFAULTS, verify: [fast('unit'), full('e2e'), bg('slow')] }
+  const base: Loop = { ...FRESH, tree: 't1', tier: 'medium', changed: ['src/a.ts'], verify: { ...FRESH.verify, status: 'pass', tree: 't1', passedOn: { unit: 't1' }, runs: { unit: { ...FAILED, outcome: 'pass', lines: '', durationMs: 2000 } } } }
+  test('foreground checks first, then background ones; running, then a pass, then a record on this tree, else not run', () => {
+    const states = testStates({ ...base, background: { slow: { tree: 't1', startedAt: 5 } } }, cfg)
+    expect(states.map(one => [one.run, one.isBackground, one.state, one.durationMs, one.startedAt])).toEqual([['unit', false, 'pass', 2000, null], ['e2e', false, 'not run', null, null], ['slow', true, 'running', null, 5]])
+    const failing = testStates({ ...base, verify: { ...base.verify, runs: { ...base.verify.runs, slow: { ...FAILED, saved: '/s.log' } } } }, cfg)[2]
+    expect(failing).toEqual({ run: 'slow', isBackground: true, state: 'fail', durationMs: 1, startedAt: null, lines: 'x', saved: '/s.log' })
+    expect(testStates({ ...base, verify: { ...base.verify, runs: { slow: { ...FAILED, outcome: 'not-found' } } } }, cfg)[2]?.state).toBe('could not run')
+    expect(testStates({ ...base, verify: { ...base.verify, runs: { slow: { ...FAILED, isOlderTree: true } } } }, cfg)[2]?.state).toBe('not run')
+  })
+  test('the notice speaks only of background checks, and is null with nothing to say', () => {
+    expect(backgroundNotice(base, cfg, 0)).toBeNull()
+    expect(backgroundNotice({ ...base, background: { slow: { tree: 't1', startedAt: 0 } } }, cfg, 14 * 60_000)).toBe('`slow` is running in the background on this tree (started 14m ago); nothing waits on it but shipping.')
+    expect(backgroundNotice({ ...base, verify: { ...base.verify, runs: { slow: { ...FAILED, outcome: 'not-found' } } } }, cfg, 0)).toBe(infraAdvice('slow', 'not-found', cfg.verifyTimeoutSec))
+    expect(backgroundNotice({ ...base, verify: { ...base.verify, runs: { slow: FAILED } } }, cfg, 0)).toBe('`slow` failed in the background on this tree (<1m):\nx')
+  })
+  test('an older-tree failure while the next run goes says the run is going, not that it starts at the next stop', () => {
+    const older = { ...FAILED, isOlderTree: true, lines: 'boom' }
+    expect(backgroundNotice({ ...base, background: { slow: { tree: 't1', startedAt: 0 } }, verify: { ...base.verify, runs: { slow: older } } }, cfg, 3 * 60_000))
+      .toBe('`slow` failed on an older tree (the tree changed while it ran), so it says nothing certain about this one:\nboom\nIt is running again in the background on this tree (started 3m ago).')
+  })
+})
+
+describe('the status bar and the gate agree after an edit', () => {
+  test('a run going on the tree an edit has since moved shows as not run, in the bar as in the gate', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    w.files['/repo/src/a.ts'] = 'export const a = 2'; await edit($, '/repo/src/a.ts'); change(w, 'src/a.ts')
+    // The edit marks the loop dirty; its tree is still the one the run started on until the next snapshot.
+    expect(loopIn(w)).toMatchObject({ isDirty: true, background: { [SLOW]: { tree: loopIn(w).tree } } })
+    const bar = async (): Promise<string> => JSON.stringify(await (await $.ui.mount({ plugin: 'devloop', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false } } as never)).findAll({ type: 'Text' }))
+    expect(await bar()).toContain('not run since the last change')
+    expect(await bar()).not.toContain('running')
+    const status = await devloop($, 'status')
+    expect(status).toMatch(/\[ \] Verification: not run since the last edit/)
+    expect(status).not.toMatch(/still running/)
+    expect(await bar()).toContain('not run since the last change')
   })
 })
