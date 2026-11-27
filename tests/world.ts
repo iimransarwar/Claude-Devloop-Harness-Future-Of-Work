@@ -155,7 +155,17 @@ export type World = {
   failWrite: string | null
   /** ui.open throws. */
   failOpen: boolean
+  /** Each child the plugin started with `$.process.spawn`, in order: it runs until the test finishes it, or the plugin kills it. */
+  spawns: Spawn[]
 }
+
+/**
+ * A spawned child as the test drives it: `command` is the check (the
+ * `bash -lc` form's third argument, the scrubbed form's fifth). `finish`
+ * ends it with an exit code and what it printed; `isKilled` says the plugin
+ * ended it first.
+ */
+export type Spawn = { command: string; argv: string[]; cwd: string | undefined; finish: (exitCode: number, output?: string) => void; isKilled: boolean }
 
 export const CONFIG = { verify: ['npm test'], mode: 'enforce' }
 
@@ -174,7 +184,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
     toolSpecs: [], registered: [], takenCommands: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
     scriptArgs: {}, ignored: {}, capped: null, hold: null, onHeld: null, unreadable: [], toolErrors: [], hookEnv: {}, diffs: {}, committable: null, headTree: null, hidden: [], differs: [], argvs: [], isDiskListed: false,
-    setupAnswers: null, pythonVersion: null, cacheInstalls: [], cacheInstallExit: 0, logs: [], isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null, failOpen: false,
+    setupAnswers: null, pythonVersion: null, cacheInstalls: [], cacheInstallExit: 0, logs: [], isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null, failOpen: false, spawns: [],
   }
   on('store.get', (_, e) => ({ value: w.store[e.key] }))
   on('store.set', (_, e) => {
@@ -459,6 +469,43 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     const exitCode = typeof exits === 'number' ? exits : exits.length > 1 ? (exits.shift() ?? 0) : (exits[0] ?? 0)
 
     return answer(w.outputs[command] ?? 'output of the command', exitCode)
+  })
+  // A child that runs until the test finishes it, or the plugin ends it (`return()` on the stream aborts `next.signal`);
+  // as a stand-in for a call on `$`, it answers how the child ended as `{ value }`.
+  on('process.spawn', async function* (_, e, next) {
+    const argv = [...e.argv]
+    let ended: { code: number; output: string } | null = null
+    let settle = (): void => undefined
+    const settled = new Promise<void>(resolve => {
+      settle = resolve
+    })
+    const one: Spawn = {
+      command: (argv[1] === '-lc' ? argv[2] : argv[4]) ?? '',
+      argv,
+      cwd: e.cwd,
+      isKilled: false,
+      finish: (code, output = 'output of the command') => {
+        ended ??= { code, output }
+        settle()
+      },
+    }
+    w.spawns.push(one)
+    next.signal.addEventListener('abort', settle)
+    try {
+      await settled
+      const done = ended as { code: number; output: string } | null
+      if (done === null) {
+        return { value: { code: null, signal: 'SIGTERM' } }
+      }
+      yield { stream: 'stdout' as const, text: done.output }
+
+      return { value: { code: done.code, signal: null } }
+    } finally {
+      next.signal.removeEventListener('abort', settle)
+      if (ended === null) {
+        one.isKilled = true
+      }
+    }
   })
   on('agent.spawn', (_, e) => {
     const agentId = `agent-${w.spawned.length + 1}`

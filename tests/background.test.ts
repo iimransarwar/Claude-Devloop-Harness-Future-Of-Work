@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { whenSettled } from '../hooks/background'
 import { describeStep } from '../hooks/commands'
 import { DEFAULTS, parseConfig } from '../hooks/config'
 import type { Config, Step } from '../hooks/config'
@@ -12,6 +13,8 @@ import { backgroundFor, stepsFor } from '../hooks/rules'
 import { FRESH } from '../hooks/state'
 import { ago } from '../hooks/testruns'
 import type { CheckRecord, Loop } from '../types'
+import { change, CONFIG, start, stop, world } from './world'
+import type { Dollar, World } from './world'
 
 // Background checks (agent-driven review design, section 3 and rules 1, 3,
 // 12): a verify entry marked "background" leaves both foreground profiles,
@@ -89,5 +92,108 @@ describe('the verification row', () => {
   })
   test('Review Focus 5: outside git the row says a background check cannot be recorded', () => {
     expect(gate({ ...base, tree: null, verify: { ...base.verify, tree: null } }, cfg)[0]).toEqual({ label: 'Verification', isMet: false, note: 'background checks need a git repository to record a result against: slow' })
+  })
+})
+
+const SLOW = 'bash tests/run-all.sh'
+const BG = { ...CONFIG, autoReview: false, verify: ['npm test', { run: SLOW, background: true }] }
+const loopIn = (w: World): Loop => (w.store['loop:/repo'] as { value: Loop }).value
+async function stopOn($: Dollar, w: World, file = 'src/a.ts') { w.files[`/repo/${file}`] = 'export const a = 1'; change(w, file); return stop($) }
+
+describe('background runs', () => {
+  test('a stop starts it and returns at once; nothing else runs it', async ($, on) => {
+    const w = world(on, BG); await start($)
+    expect((await stopOn($, w)).block).toBeUndefined()
+    expect(w.spawns.map(one => one.command)).toEqual([SLOW])
+    expect(w.spawns[0]?.argv.slice(0, 2)).toEqual(['bash', '-lc'])
+    expect(w.ran).not.toContain(SLOW)
+    expect(loopIn(w).background[SLOW]).toEqual({ tree: w.tree, startedAt: 1000 })
+    await stop($)
+    expect(w.spawns.length).toBe(1)
+  })
+  test('a pass is recorded against its tree, with how long it took', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    w.now += 41 * 60_000; w.spawns[0]?.finish(0); await whenSettled()
+    expect(loopIn(w).verify.passedOn[SLOW]).toBe(w.tree)
+    expect(loopIn(w).verify.runs[SLOW]).toMatchObject({ tree: w.tree, outcome: 'pass', durationMs: 41 * 60_000, isOlderTree: false })
+    expect(loopIn(w).background).toEqual({})
+    expect(loopIn(w).events.at(-1)?.text).toBe(`background: ${SLOW} passed on this tree (41m)`)
+  })
+  test('a failure keeps its first lines and its output, and is not rerun on the same tree', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    w.spawns[0]?.finish(1, 'FAIL tests/a.test.ts\nexpected 1 to be 2'); await whenSettled()
+    expect(loopIn(w).verify.runs[SLOW]).toMatchObject({ outcome: 'fail', lines: 'FAIL tests/a.test.ts\nexpected 1 to be 2' })
+    expect(loopIn(w).verify.runs[SLOW]?.saved).toMatch(/\/checks\/.+\.log$/)
+    expect(loopIn(w).verify.passedOn[SLOW]).toBeUndefined()
+    await stop($)
+    expect(w.spawns.length).toBe(1)
+  })
+  test('a stop on a newer tree cancels the older run and starts again', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w); await stopOn($, w, 'src/b.ts')
+    expect(w.spawns.length).toBe(2)
+    expect(w.spawns[0]?.isKilled).toBe(true)
+    w.spawns[0]?.finish(1); await whenSettled()
+    expect(loopIn(w).verify.runs[SLOW]).toBeUndefined()
+    expect(loopIn(w).background[SLOW]?.tree).toBe(w.tree)
+  })
+  test('a tree that changed while it ran: never a pass, and the next stop runs it again', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    change(w, 'src/b.ts'); w.spawns[0]?.finish(0); await whenSettled()
+    expect(loopIn(w).verify.runs[SLOW]?.isOlderTree).toBe(true)
+    expect(loopIn(w).verify.passedOn[SLOW]).toBeUndefined()
+    await stop($)
+    expect(w.spawns.length).toBe(2)
+  })
+  test('Review Focus 3: a run whose session ended is not running forever; the next stop starts it again', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    w.sessionId = 's2'; await start($)
+    expect(loopIn(w).background).toEqual({})
+    expect(loopIn(w).events.some(one => one.text === `background: ${SLOW} did not finish (the session or plugin ended); it starts again at the next stop`)).toBe(true)
+    await stop($)
+    expect(w.spawns.length).toBe(2)
+  })
+  test('Review Focus 5: outside git no background check starts', async ($, on) => {
+    const w = world(on, BG); w.isGit = false; await start($); await stopOn($, w)
+    expect(w.spawns).toEqual([])
+  })
+  test('a background check with when carries its pass while the files it covers are unchanged', async ($, on) => {
+    const w = world(on, { ...BG, testing: { scope: 'targeted' }, verify: ['npm test', { run: SLOW, background: true, when: ['src/**'] }] })
+    w.outputs['#covered-files'] = '100644 blob abc\tsrc/a.ts'; await start($); await stopOn($, w)
+    w.spawns[0]?.finish(0); await whenSettled(); await stopOn($, w, 'src/b.ts')
+    expect(w.spawns.length).toBe(1)
+    expect(loopIn(w).verify.passedOn[SLOW]).toBe(w.tree)
+  })
+  test('rule 3: a background check runs with the scrubbed environment a foreground check gets', async ($, on) => {
+    const w = world(on, { ...BG, checkEnv: { mode: 'enforce', pass: ['NODE_ENV'] } }); await start($); await stopOn($, w)
+    expect(w.spawns.map(one => [one.command, one.cwd, one.argv.slice(0, 2), one.argv.includes('NODE_ENV')])).toEqual([[SLOW, '/repo', ['bash', '-c'], true]])
+    expect(w.envs['npm test']).toContain('NODE_ENV')
+  })
+  test('foreground checks keep a record with their duration', async ($, on) => {
+    const w = world(on, BG); await start($); await stopOn($, w)
+    expect(loopIn(w).verify.runs['npm test']).toMatchObject({ tree: w.tree, outcome: 'pass', durationMs: 0, isOlderTree: false })
+  })
+})
+
+describe('a loop stored before background checks', () => {
+  const finding = { id: 'F1', reviewer: 'general', severity: 'high', file: '', line: 0, quote: '', problem: 'unreadable', evidence: 'a person', isPreExisting: false, route: 'decision', status: 'open', isBlocking: true, round: 1, seen: 1, note: null }
+  /** The loop as 0.4 kept it: the same fields, without `background` and `verify.runs`. */
+  const earlier = (shape: string) => {
+    const { runs: _runs, ...verify } = { ...FRESH.verify, status: 'pass' as const, tree: 't0', passedOn: { 'npm test': 't0' } }
+    const { background: _background, ...loop } = {
+      ...FRESH, root: '/repo', sessionId: 's0', phase: 'build' as const, spec: 'login', findings: [finding], verify,
+      limit: { ...FRESH.limit, branch: 'feature', failed: 2 },
+    }
+
+    return { shape, value: loop }
+  }
+  test('an upgrade mid-change keeps the phase, the findings, the passes and the loop limit', async ($, on) => {
+    const w = world(on, BG); w.store['loop:/repo'] = earlier('loop-12'); await start($)
+    expect(loopIn(w)).toMatchObject({ phase: 'build', spec: 'login', findings: [finding], background: {}, limit: { failed: 2 } })
+    expect(loopIn(w).verify).toMatchObject({ passedOn: { 'npm test': 't0' }, runs: {} })
+    expect((w.store['loop:/repo'] as { shape: string }).shape).toBe('loop-13')
+  })
+  test('a shape older than that starts fresh, as before', async ($, on) => {
+    const w = world(on, BG); w.store['loop:/repo'] = earlier('loop-11'); await start($)
+    expect(loopIn(w)).toMatchObject({ phase: 'idle', findings: [], background: {} })
   })
 })

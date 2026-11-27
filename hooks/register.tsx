@@ -41,6 +41,7 @@ import type { Hits, Papercut, PapercutClose } from './ledger'
 import { syncRegressions } from './regress'
 import { auditLine, clip } from './records'
 import type { Actor, AuditEvent } from './records'
+import { abandonBackground, startBackground } from './background'
 import { approvalsFor, approvers, featureCounts, gate, isShippable, tierFor } from './gate'
 import { digest, infraAdvice } from './output'
 import { formatFinding } from './findings'
@@ -281,6 +282,10 @@ async function wake($: Engine): Promise<Place> {
   }
   const sessionId = await $.session.id().catch(() => null)
   const { isReload } = await restore($, at.root, sessionId)
+  // A background run the stored loop names went with the last session or the module: it starts again at the next stop.
+  await abandonBackground($, at).catch((error: unknown) => {
+    $.ui.log(`devloop: the last session's background runs could not be cleared: ${String(error)}`, { to: 'debug' })
+  })
   await abandonStale($, at.root)
   const found = await snapshotInForce($, at)
   if (found === null) {
@@ -316,6 +321,17 @@ async function wake($: Engine): Promise<Place> {
   await resumeFollowups($, at, cfg).catch(() => undefined)
 
   return at
+}
+
+/**
+ * What every stop that ends the turn does: start the background checks
+ * that have no result on the tree (rule 3), never waiting on one. A failure
+ * to start them is logged, never a held stop.
+ */
+async function atTurnEnd($: Engine, at: Place, cfg: Config, tree: string | null): Promise<void> {
+  await startBackground($, at, cfg, tree).catch((error: unknown) => {
+    $.ui.log(`devloop: the background checks could not be started: ${String(error)}`, { to: 'debug' })
+  })
 }
 
 /** Sets `isOverBudget` once the session's estimated cost passes the cap. */
@@ -1860,6 +1876,7 @@ export const register: Register = on => {
     const cfg = ((await policyInForce($, at, snap)) ?? first).cfg
     // The loop limit (DESIGN 4.16): at the limit the turn may end, once, with its message added; nothing more is handed back.
     const limited = async (result: typeof below): Promise<typeof below> => {
+      await atTurnEnd($, at, cfg, snap.tree)
       await notePassing($, at, snap).catch(() => undefined)
       const told = await reachLimit($, at, cfg, snap.branch)
 
@@ -1893,6 +1910,7 @@ export const register: Register = on => {
     if (ran.infra !== null && ran.failed !== null) {
       const advice = infraAdvice(ran.failed, ran.infra, cfg.verifyTimeoutSec)
       $.ui.toast(`devloop: ${advice}`, { timeoutMs: 15_000 })
+      await atTurnEnd($, at, cfg, snap.tree)
 
       return { ...below, additionalContext: [...(below.additionalContext ?? []), `devloop: verification could not run, so the stop is not blocked and no fix round is spent. ${advice}`] }
     }
@@ -1924,6 +1942,8 @@ export const register: Register = on => {
     }
     // While a spec is written its tests are expected to fail: the result is recorded, nothing is blocked.
     if (after.phase === 'spec') {
+      await atTurnEnd($, at, cfg, snap.tree)
+
       return below
     }
     // The same check failed twice in a row the same way: the harness writes the lesson itself (DESIGN 4.17, decision 1).

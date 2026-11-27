@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
+import type { CheckRecord, FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
 import { EMPTY_CACHE } from './cache'
 import type { CacheState } from './cache'
 import { parseConfig } from './config'
@@ -45,6 +45,8 @@ export { FRESH } from './fresh'
 // Change the tag when Loop's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const SHAPE = 'loop-13'
+/** The shape before background checks: the same loop without `background` and `verify.runs`, which `upgraded` fills. */
+const PREVIOUS = 'loop-12'
 const LOOP = atom({ plugin: 'devloop', key: 'loop' } as const, FRESH, { shape: SHAPE })
 const MODE = atom({ plugin: 'devloop', key: 'mode' } as const, 'off' as Mode)
 /** The pane's tab: written from a tab button's handler, never while drawing. */
@@ -308,7 +310,11 @@ export async function save($: Engine, root: string, change: (loop: Loop) => Loop
  */
 export async function restore($: Engine, root: string, sessionId: string | null): Promise<{ loop: Loop; isReload: boolean }> {
   const stored = (await $.store.get(`loop:${root}`)) as { shape?: string; value?: Loop } | undefined
-  const base = stored?.shape === SHAPE && stored.value !== undefined ? stored.value : FRESH
+  const base = upgraded(stored)
+  // An upgraded loop is kept under this shape at once.
+  if (stored?.shape === PREVIOUS && stored.value !== undefined) {
+    await $.store.set(`loop:${root}`, { shape: SHAPE, value: base })
+  }
   const isReload = sessionId !== null && base.sessionId === sessionId
   const loop = await update($, LOOP, (): Loop => isReload
     ? { ...base, root }
@@ -328,6 +334,27 @@ export async function restore($: Engine, root: string, sessionId: string | null)
       })
 
   return { loop, isReload }
+}
+
+/**
+ * The loop a stored value holds: one of this shape as it is; one of the
+ * shape before (an upgrade mid-change) with the fields added since filled
+ * empty, so its phase, findings, verdicts, passes and loop limit carry; any
+ * older one, or none, fresh.
+ */
+function upgraded(stored: { shape?: string; value?: Loop } | undefined): Loop {
+  if (stored?.value === undefined) {
+    return FRESH
+  }
+  if (stored.shape === SHAPE) {
+    return stored.value
+  }
+  if (stored.shape !== PREVIOUS) {
+    return FRESH
+  }
+  const before = stored.value as Omit<Loop, 'background' | 'verify'> & { verify: Omit<Loop['verify'], 'runs'> }
+
+  return { ...before, background: {}, verify: { ...before.verify, runs: {} } }
 }
 
 /** Marks a review abandoned when it has been `running` past its lifetime: its agent is not coming back. */
@@ -530,7 +557,7 @@ git -c core.quotePath=false ls-tree -r --full-tree "$1"
  * check with no key (git could not list the tree, or no file matches) has
  * none, so it runs as before.
  */
-async function coveredKeys($: Engine, at: Place, steps: readonly Step[], tree: string | null): Promise<Record<string, string>> {
+export async function coveredKeys($: Engine, at: Place, steps: readonly Step[], tree: string | null): Promise<Record<string, string>> {
   const scoped = steps.filter(one => one.when !== null)
   if (tree === null || scoped.length === 0) {
     return {}
@@ -914,7 +941,7 @@ export async function run($: Engine, command: string, cwd: string, timeoutSec: n
 }
 
 /** Keeps a check's whole output where the builder can read it (and not write it); the path, or null. */
-async function keepOutput($: Engine, at: Place, command: string, raw: string): Promise<string | null> {
+export async function keepOutput($: Engine, at: Place, command: string, raw: string): Promise<string | null> {
   const file = outputPath(await stateDirOf($, at.root), command)
   const saved = await $.fs.write(file, raw).then(() => file, () => null)
   if (saved !== null) {
@@ -941,6 +968,8 @@ export type Verified = {
   covered: Record<string, string>
   /** Checks whose pass carried to this tree because the files they cover did not change (targeted testing). */
   carried: string[]
+  /** What each check this run ran did on the tree, with how long it took, by command (`loop.verify.runs`). */
+  runs: Record<string, CheckRecord>
 }
 
 /**
@@ -964,6 +993,7 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
   const passed: string[] = []
   const carried: string[] = []
   const passedKeys: Record<string, string> = {}
+  const runs: Record<string, CheckRecord> = {}
   for (const step of steps) {
     if (tree !== null && loop.verify.passedOn[step.run] === tree) {
       passed.push(step.run)
@@ -977,6 +1007,7 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
       Object.assign(passedKeys, covered(step.run))
       continue
     }
+    const began = await $.clock.now()
     let ran = await run($, step.run, at.root, cfg.verifyTimeoutSec, cfg.checkEnv)
     // A check that could not run is not a flake: rerunning it changes nothing.
     if (!ran.isPassing && ran.outcome === 'fail') {
@@ -989,7 +1020,10 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
         }
       }
     }
+    // How long the check took, its rerun included: the summary names it (rule 6).
+    const ended = await $.clock.now()
     const saved = await keepOutput($, at, step.run, ran.raw)
+    runs[step.run] = { tree, outcome: ran.outcome, at: ended, durationMs: Math.max(0, ended - began), lines: ran.isPassing ? '' : ran.output.split('\n').slice(0, 10).join('\n'), isOlderTree: false, saved }
     if (!ran.isPassing) {
       return {
         isPassing: false,
@@ -1002,13 +1036,14 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
         infra: ran.outcome === 'fail' || ran.outcome === 'pass' ? null : ran.outcome,
         covered: passedKeys,
         carried,
+        runs,
       }
     }
     passed.push(step.run)
     Object.assign(passedKeys, covered(step.run))
   }
 
-  return { isPassing: true, failed: null, output: '', fingerprint: null, flaky, passed, saved: null, infra: null, covered: passedKeys, carried }
+  return { isPassing: true, failed: null, output: '', fingerprint: null, flaky, passed, saved: null, infra: null, covered: passedKeys, carried, runs }
 }
 
 export type VerifiedNow = {
@@ -1075,6 +1110,8 @@ export async function verifyNow($: Engine, at: Place, cfg: Config, profile: Prof
           passedOn,
           covered,
           infra: ran.infra,
+          // Merged: a background check's record is never dropped by a foreground run.
+          runs: { ...latest.verify.runs, ...ran.runs },
         },
       },
       'verify',
