@@ -192,7 +192,7 @@ test('a check that times out or is killed is infrastructure too; a real failure 
   change(w, 'src/b.ts')
   w.exits['npm test'] = 124
   expect((await stop($)).block).toBeUndefined()
-  expect(w.toasts.join(' ')).toMatch(/did not finish within 300s/)
+  expect(w.toasts.join(' ')).toMatch(/did not finish within 60s, so devloop stopped waiting/)
   change(w, 'src/c.ts')
   w.exits['npm test'] = 1
   expect((await stop($)).block).toMatch(/fix round 1 of 2/)

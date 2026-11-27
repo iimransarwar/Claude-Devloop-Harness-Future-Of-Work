@@ -1966,10 +1966,12 @@ export const register: Register = on => {
 
       return limited(below)
     }
-    const { loop: after, ran, isRepeat } = await verifyNow($, at, cfg, 'fast')
+    // A stop waits briefly: past stopTimeoutSec the check is left alone (no block) and the person is told to run it in the background.
+    const stopLimit = Math.min(cfg.verifyTimeoutSec, cfg.stopTimeoutSec)
+    const { loop: after, ran, isRepeat } = await verifyNow($, at, cfg, 'fast', stopLimit)
     // A check that could not run at all is no failure of the work: no block, no fix round; the person is told what to do.
     if (ran.infra !== null && ran.failed !== null) {
-      const advice = infraAdvice(ran.failed, ran.infra, cfg.verifyTimeoutSec)
+      const advice = infraAdvice(ran.failed, ran.infra, stopLimit)
       $.ui.toast(`devloop: ${advice}`, { timeoutMs: 15_000 })
       // A round never waits on tests: a fix to re-review is, though they could not run (rule 14).
       await maybeReview($, at, cfg, after)

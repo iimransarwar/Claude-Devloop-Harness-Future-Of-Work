@@ -55,7 +55,7 @@ describe('background checks in the policy', () => {
     expect(checksForChange(cfg, ['src/a.ts'])).toBe('Checks for what you changed: `unit`, `slow` (runs in the background).')
     // The command line never runs a background check (rule 12): CI or the session's background run proves it.
     expect(checksFor(cfg, ['src/a.ts'], false)).toEqual(['unit'])
-    expect(infraAdvice('x', 'timeout', 600)).toBe('`x` did not finish within 600s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.')
+    expect(infraAdvice('x', 'timeout', 600)).toBe('`x` did not finish within 600s, so devloop stopped waiting. Mark it "background": true in devloop.json: it then runs without holding anyone up, with no time limit. No code change to the work fixes this.')
     expect([ago(0), ago(59_999), ago(14 * 60_000), ago(65 * 60_000)]).toEqual(['<1m', '<1m', '14m', '1h 5m'])
   })
   test('with only background checks applying, the context line says they start at the next stop', () => {

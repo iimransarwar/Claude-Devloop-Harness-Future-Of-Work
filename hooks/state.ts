@@ -997,7 +997,7 @@ export type Verified = {
  * first, and a check with \`when\` whose covered files are as they were when
  * it passed is not run again.
  */
-async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Profile, tree: string | null): Promise<Verified> {
+async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Profile, tree: string | null, timeoutSec = cfg.verifyTimeoutSec): Promise<Verified> {
   // A pass is recorded per check with the tree it ran on: a check that
   // already passed on this very tree is not run again, and every other one is.
   const failedLast = loop.verify.status === 'fail' ? loop.verify.failed : null
@@ -1026,13 +1026,13 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
       continue
     }
     const began = await $.clock.now()
-    let ran = await run($, step.run, at.root, cfg.verifyTimeoutSec, cfg.checkEnv)
+    let ran = await run($, step.run, at.root, timeoutSec, cfg.checkEnv)
     // A check that could not run is not a flake: rerunning it changes nothing.
     if (!ran.isPassing && ran.outcome === 'fail') {
       const passedOn = loop.verify.passedOn[step.run]
       const since = passedOn === undefined || tree === null ? null : passedOn === tree ? [] : await changedBetween($, at, passedOn, tree)
       if (isFlakeSuspect(step, passedOn !== undefined, since)) {
-        ran = await run($, step.run, at.root, cfg.verifyTimeoutSec, cfg.checkEnv)
+        ran = await run($, step.run, at.root, timeoutSec, cfg.checkEnv)
         if (ran.isPassing) {
           flaky.push(step.run)
         }
@@ -1076,10 +1076,10 @@ export type VerifiedNow = {
  * outcome down. The one place that sets `verify`, so a pass always names the
  * tree and the profile it covers.
  */
-export async function verifyNow($: Engine, at: Place, cfg: Config, profile: Profile): Promise<VerifiedNow> {
+export async function verifyNow($: Engine, at: Place, cfg: Config, profile: Profile, timeoutSec = cfg.verifyTimeoutSec): Promise<VerifiedNow> {
   const snap = await snapshot($, at, cfg)
   const before = withSnapshot(await loopOf($), snap, cfg)
-  const ran = await verify($, at, cfg, before, profile, snap.tree)
+  const ran = await verify($, at, cfg, before, profile, snap.tree, timeoutSec)
   const now = await $.clock.now()
   const isRepeat = ran.fingerprint !== null && ran.fingerprint === before.verify.fingerprint
   await bump($, at.root, 'verify-runs')

@@ -877,6 +877,7 @@ error keeps the gate shut until it is fixed.
 | `defaultBranch` | `"main"` | The branch changes are measured against and merged into. |
 | `verify` | `[]` | Checks, in order. Each is a command string (a `fast` check) or `{ "run": "<command>", "profile": "fast" \| "full", "when": ["<glob>", ...] }`. A single string is one check. Add `"background": true` to a slow suite: it never runs inside a hook, starts in the background when the agent stops, has no time limit, and its result counts only for the exact code it ran on. The command line, the pre-push hook and the fallback hooks leave background checks to CI or the session and say so. |
 | `verifyTimeoutSec` | `300` | Time limit for each foreground check, up to 600. For anything longer, mark the check `"background": true`. |
+| `stopTimeoutSec` | `60` | How long a stop waits on its fast checks. Past it devloop stops waiting, does not block the agent, and says to mark the check `"background": true`. A push still waits up to `verifyTimeoutSec`. |
 | `protected` | `devloop.json`, `REVIEW.md`, `CODEOWNERS`, `.github/CODEOWNERS`, `.claude/**`, `specs/**/features.json`, `evals/**` | Paths the agent never edits. |
 | `tests` | `**/*.test.*`, `**/*.spec.*`, `**/*_test.*`, `**/test_*.py`, `test/**`, `tests/**`, `**/__tests__/**` | Test files: locked while building. |
 | `secrets` | `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.netrc`, `**/.aws/credentials`, `**/credentials*.json` | Files never read or written. |

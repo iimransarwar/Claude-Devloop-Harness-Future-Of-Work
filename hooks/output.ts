@@ -125,7 +125,7 @@ export function infraAdvice(command: string, outcome: Outcome, timeoutSec: numbe
       if (isBackground) {
         return `\`${command}\` stopped before it finished (exit 124: its own time limit, not devloop's). Check the command's own timeout; no code change to the work fixes this.`
       }
-      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json (600 at most) or mark the check "background": true; no code change to the work fixes this.`
+      return `\`${command}\` did not finish within ${timeoutSec}s, so devloop stopped waiting. Mark it "background": true in devloop.json: it then runs without holding anyone up, with no time limit. No code change to the work fixes this.`
     case 'killed':
       return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`
     default:

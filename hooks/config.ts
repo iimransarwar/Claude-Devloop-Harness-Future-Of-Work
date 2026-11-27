@@ -36,6 +36,8 @@ export type Config = {
   /** Checks that must all exit 0 before work counts as done. */
   verify: Step[]
   verifyTimeoutSec: number
+  /** How long a stop waits on its fast checks before it stops waiting (never longer than verifyTimeoutSec). */
+  stopTimeoutSec: number
   /** Paths the agent never edits (harness, policy, acceptance files). */
   protected: string[]
   /** Test files: locked while building against an approved spec. */
@@ -158,6 +160,7 @@ export type CheckEnv = { pass: string[]; mode: 'off' | 'observe' | 'enforce' }
 export const DEFAULTS: Config = {
   verify: [],
   verifyTimeoutSec: 300,
+  stopTimeoutSec: 60,
   protected: [
     'devloop.json',
     'REVIEW.md',
@@ -1004,6 +1007,7 @@ export function parseConfig(text: string): Parsed {
   const cfg: Config = {
     verify,
     verifyTimeoutSec: whole(raw, 'verifyTimeoutSec', DEFAULTS.verifyTimeoutSec, 600, errors, 'Mark long checks "background": true in verify: they run with no time limit, and only shipping waits for them'),
+    stopTimeoutSec: whole(raw, 'stopTimeoutSec', DEFAULTS.stopTimeoutSec, 600, errors),
     protected: strings(raw, 'protected', DEFAULTS.protected, errors),
     tests: strings(raw, 'tests', DEFAULTS.tests, errors),
     secrets: strings(raw, 'secrets', DEFAULTS.secrets, errors),
