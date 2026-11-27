@@ -9,7 +9,7 @@
 import type { FailedRound, LoopLimit } from '../types'
 import type { Config, Step } from './config'
 import { digest } from './output'
-import { matchesAny, stepsFor } from './rules'
+import { backgroundFor, matchesAny, stepsFor } from './rules'
 
 // ---------------------------------------------------------------- the loop limit (part 1)
 
@@ -159,12 +159,20 @@ export function checksForChange(cfg: Pick<Config, 'verify'>, changed: readonly s
     return null
   }
   const steps = stepsFor(cfg.verify, 'full', changed)
-  if (steps.length === 0) {
+  const background = backgroundFor(cfg.verify, changed)
+  if (steps.length === 0 && background.length === 0) {
     return 'Checks for what you changed: none of the verify checks applies to these files.'
   }
+  const named = [
+    ...steps.map(one => `\`${one.run}\`${one.profile === 'full' ? ' (run when the change ships)' : ''}`),
+    ...background.map(one => `\`${one.run}\` (runs in the background)`),
+  ]
+  // With no foreground check to run, say when the background ones start rather than that nothing applies.
+  const when = steps.length > 0 ? '' : background.length === 1 ? ' It starts at your next stop.' : ' They start at your next stop.'
 
-  return `Checks for what you changed: ${steps.map(one => `\`${one.run}\`${one.profile === 'full' ? ' (run when the change ships)' : ''}`).join(', ')}.`
+  return `Checks for what you changed: ${named.join(', ')}.${when}`
 }
 
-/** The `full` checks without `when`, which doctor names (decision 7): each runs in full on every change that ships. */
-export const unscopedFull = (cfg: Pick<Config, 'verify'>): string[] => cfg.verify.filter(one => one.profile === 'full' && one.when === null).map(one => one.run)
+/** The `full` checks without `when`, which doctor names (decision 7): each runs in full on every change that ships. A background check is not named: it runs after the agent's stops, with no time limit. */
+export const unscopedFull = (cfg: Pick<Config, 'verify'>): string[] =>
+  cfg.verify.filter(one => one.profile === 'full' && one.when === null && one.background !== true).map(one => one.run)

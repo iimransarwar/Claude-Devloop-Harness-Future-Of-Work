@@ -15,7 +15,7 @@ import { statelessLoop } from './enforce'
 import { gate, specialistsFor, tierWithBlast } from './gate'
 import type { Check, GateFacts } from './gate'
 import { digest } from './output'
-import { matchesAny, stepsFor } from './rules'
+import { backgroundFor, matchesAny, stepsFor } from './rules'
 import { HARNESS_VERSION, validate } from './records'
 
 /** A hash of the policy in force, as every record names it (the module's records and the evidence note alike). */
@@ -256,18 +256,30 @@ const reviewerOf = (label: string): string | null =>
  */
 export function statelessGate(proof: TreeProof, cfg: Config, facts: GateFacts): { loop: Loop; rows: Check[]; isGreen: boolean } {
   const loop = proofLoop(proof, cfg)
-  const rows = gate(loop, cfg, facts).map(row => {
+  const rows = gate(loop, cfg, { ...facts, isStateless: true }).map(row => {
     const name = reviewerOf(row.label)
 
     return name === null ? row : reviewRowFrom(row.label, name, proof.note, proof.committable, policyHash(cfg), proof.isOlderNote === true)
   })
+  const skipped = backgroundFor(cfg.verify, loop.changed).map(one => one.run)
+  if (skipped.length > 0) {
+    rows.push({ label: 'Background checks', isMet: true, note: `${NOT_CHECKED_HERE}: ${skipped.join(', ')}` })
+  }
 
   return { loop, rows, isGreen: rows.every(row => row.isMet) }
 }
 
-/** The checks the command line runs for a change: every fast and full check that applies to its files; none for an empty change. */
+/**
+ * The checks the command line runs for a change: every fast and full check
+ * that applies to its files; none for an empty change. Background checks never
+ * run here (rule 3): a hook, the pre-push hook or the gate would wait on a suite
+ * that may take hours. CI or the session's background run proves them.
+ */
 export const checksFor = (cfg: Config, files: readonly string[], isEmpty: boolean): string[] =>
   isEmpty ? [] : stepsFor(cfg.verify, 'full', files).map(one => one.run)
+
+/** The row the command line's gate adds for background checks it does not run (rule 12). */
+export const NOT_CHECKED_HERE = "not checked here (background): CI or the session's background run proves it"
 
 /** The reviewers a change needs evidence from: the general one, and each blocking specialist whose globs a changed file matches. */
 export const reviewersNeeded = (cfg: Config, files: readonly string[]): string[] =>

@@ -93,6 +93,24 @@ export type Finding = {
   note: string | null
 }
 
+/** One review cycle: from its first round to a pass, the cap or a stall. */
+export type ReviewCycle = {
+  /** The number of the cycle's first finding id (F<from>). */
+  from: number
+  /** How the cycle ended; null while it goes on. */
+  ended: 'pass' | 'cap' | 'stalled' | null
+  /** The one summary of the cycle's end, for the person. */
+  summary: string | null
+  /** Rounds of this cycle whose verdict was thrown away because the tree moved while they ran (rule 11): each still counts toward the cap. */
+  discarded: number
+  /** The tree of this cycle's last round that settled: the next round reads the lines since it, and with none, the whole change. */
+  settledTree: string | null
+  /** The tree the person was last told about. */
+  toldTree: string | null
+  /** The line said about edits made after the cycle ended. */
+  followUp: string | null
+}
+
 /** One reviewer agent of a round: the general reviewer or a specialist. */
 export type ReviewAgent = {
   agentId: string
@@ -151,6 +169,33 @@ export type Approval = {
    */
   checklist?: { kept: string[]; person: string[]; struck: string[] }
 }
+
+/**
+ * How a check ended. `not-found`, `timeout` and `killed` are infrastructure
+ * outcomes: the check could not run, so no code change fixes it and no fix
+ * round is spent on it.
+ */
+export type Outcome = 'pass' | 'fail' | 'not-found' | 'timeout' | 'killed'
+
+/**
+ * One verify check's latest run, as the loop keeps it (a different thing from
+ * the command line's `CheckRun`): the tree it ran on, how it ended, when and
+ * for how long. `lines` is at most the first 10 lines of the distilled output
+ * (`''` on a pass); `saved` is where the whole output was kept. A run whose
+ * tree changed while it ran is `isOlderTree`: it never counts for the tree now.
+ */
+export type CheckRecord = {
+  tree: string | null
+  outcome: Outcome
+  at: number
+  durationMs: number
+  lines: string
+  isOlderTree: boolean
+  saved: string | null
+}
+
+/** A background check's run going now: the tree it started on, and when. */
+export type BackgroundRun = { tree: string | null; startedAt: number }
 
 /** Everything the loop knows about the change in progress, per repository. */
 export type Loop = {
@@ -219,7 +264,15 @@ export type Loop = {
     blockedTree: string | null
     /** How the last failing check ended when it could not run at all (not found, timed out, killed); null for a real failure. */
     infra: string | null
+    /**
+     * Each check's latest run, by command, foreground and background alike.
+     * A background check that could not run on a tree (not found, killed)
+     * says so here by its `outcome`, and is not started again on that tree.
+     */
+    runs: Record<string, CheckRecord>
   }
+  /** Background checks running now, by command: the tree each started on, and when. */
+  background: Record<string, BackgroundRun>
   review: {
     status: 'none' | 'running' | 'pass' | 'fail'
     round: number
@@ -242,6 +295,13 @@ export type Loop = {
     isLooping: boolean
     /** The round in progress reads only the lines changed since the last round (DESIGN 4.16, decision 8); absent or false: the whole change. */
     isScoped?: boolean
+    /**
+     * The review cycle this round belongs to (agent-driven review, rules 5,
+     * 11, 13-15): `maxReviewRounds` bounds one cycle, which ends with a pass,
+     * the cap or a stall; the next ready moment after a pass starts a new one
+     * at round 1.
+     */
+    cycle: ReviewCycle
   }
   /** Every finding of this change's review rounds, with its status. */
   findings: Finding[]
@@ -350,6 +410,7 @@ declare module 'claude-code' {
   interface McpToolInputs {
     mcp__devloop__feature_check: { id: string }
     mcp__devloop__devloop_status: { detail?: boolean }
+    mcp__devloop__devloop_review: Record<never, never>
     mcp__devloop__devloop_blocked: { reason: string }
     mcp__devloop__devloop_handoff: {
       objective: string

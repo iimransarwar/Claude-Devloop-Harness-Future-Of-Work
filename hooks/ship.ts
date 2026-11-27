@@ -60,7 +60,8 @@ export async function prove($: Engine, at: Place): Promise<Proven> {
     await notePassing($, at, snap).catch(() => undefined)
   }
   const loop = await loopOf($)
-  const facts = factsOf(at, policy)
+  // The time, so a held push says how long a background run has gone.
+  const facts = { ...factsOf(at, policy), now: await $.clock.now() }
 
   return { loop, judging, facts, rows: gate(loop, judging, facts), isSpecChanged }
 }

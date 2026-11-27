@@ -10,6 +10,12 @@ export type Step = {
   profile: Profile
   /** Globs: the check runs only when a changed file matches one; null runs it always. */
   when: string[] | null
+  /**
+   * A background check: in neither profile, it runs after the agent's stops
+   * with no time limit, and only shipping waits for its pass. The key is
+   * present only on a background check.
+   */
+  background?: true
 }
 
 /** A specialist reviewer: started beside the general one when a changed file matches `when`. */
@@ -30,6 +36,8 @@ export type Config = {
   /** Checks that must all exit 0 before work counts as done. */
   verify: Step[]
   verifyTimeoutSec: number
+  /** How long a stop waits on its fast checks before it stops waiting (never longer than verifyTimeoutSec). */
+  stopTimeoutSec: number
   /** Paths the agent never edits (harness, policy, acceptance files). */
   protected: string[]
   /** Test files: locked while building against an approved spec. */
@@ -53,6 +61,8 @@ export type Config = {
   defaultBranch: string
   /** A change past either limit, or touching a dependency manifest, is one tier riskier. */
   blastRadius: { maxFiles: number; maxLines: number; manifests: string[] }
+  /** A small change (not high risk, within both limits) gets one fast critic: the general reviewer only, on `model`. */
+  fastReview: { maxFiles: number; maxLines: number; model: string | null }
   /** How many people approve a merge, by tier. */
   approvals: { low: number; medium: number; high: number }
   reviewers: Reviewer[]
@@ -150,6 +160,7 @@ export type CheckEnv = { pass: string[]; mode: 'off' | 'observe' | 'enforce' }
 export const DEFAULTS: Config = {
   verify: [],
   verifyTimeoutSec: 300,
+  stopTimeoutSec: 60,
   protected: [
     'devloop.json',
     'REVIEW.md',
@@ -198,11 +209,12 @@ export const DEFAULTS: Config = {
   network: null,
   mode: 'enforce',
   maxFixRounds: 2,
-  maxReviewRounds: 3,
+  maxReviewRounds: 2,
   autoReview: true,
   budgetUsd: null,
   instructionMaxLines: 200,
   defaultBranch: 'main',
+  fastReview: { maxFiles: 3, maxLines: 60, model: 'sonnet' },
   blastRadius: {
     maxFiles: 25,
     maxLines: 600,
@@ -228,7 +240,8 @@ export const DEFAULTS: Config = {
   grounding: { mode: null, fresh: 'turn', also: [], never: [] },
   loop: { failedRounds: 6 },
   testing: { scope: 'targeted' },
-  learning: { auto: 'trial', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
+  // Learning runs only when a person asks (/devloop learn): a proposer at the end of turns costs time nobody asked for.
+  learning: { auto: 'off', repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
   library: { save: 'auto' },
 }
 
@@ -329,14 +342,18 @@ const unknownKeys = (raw: Raw, known: readonly string[], at: string): string[] =
     .filter(key => !known.includes(key))
     .map(key => `${at}${key}: unknown field`)
 
-/** A whole number in range; anything else is reported and takes the fallback. */
-function whole(raw: Raw, key: string, fallback: number, max: number, errors: string[]): number {
+/**
+ * A whole number in range; anything else is reported and takes the fallback.
+ * `overMax`, when given, is said after the error for a number above `max`.
+ */
+function whole(raw: Raw, key: string, fallback: number, max: number, errors: string[], overMax?: string): number {
   const v = raw[key]
   if (v === undefined) {
     return fallback
   }
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > max) {
-    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}`)
+    const why = overMax !== undefined && typeof v === 'number' && Number.isFinite(v) && v > max ? `. ${overMax}` : ''
+    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}${why}`)
 
     return fallback
   }
@@ -372,7 +389,7 @@ function step(v: unknown, at: string, errors: string[]): Step | null {
 
     return null
   }
-  errors.push(...unknownKeys(v, ['run', 'profile', 'when'], `${at}.`))
+  errors.push(...unknownKeys(v, ['run', 'profile', 'when', 'background'], `${at}.`))
   let profile: Profile = 'fast'
   if (v.profile === 'full') {
     profile = 'full'
@@ -384,6 +401,12 @@ function step(v: unknown, at: string, errors: string[]): Step | null {
     when = v.when
   } else if (v.when !== undefined) {
     errors.push(`${at}.when: expected a non-empty list of globs; the check runs on every change`)
+  }
+  if (v.background === true) {
+    return { run: v.run, profile, when, background: true }
+  }
+  if (v.background !== undefined && v.background !== false) {
+    errors.push(`${at}.background: expected true or false; it runs in the foreground`)
   }
 
   return { run: v.run, profile, when }
@@ -452,6 +475,30 @@ function blastRadius(v: unknown, errors: string[]): Config['blastRadius'] {
     manifests: strings(v, 'manifests', fallback.manifests, sub),
   }
   errors.push(...sub.map(error => `blastRadius.${error}`))
+
+  return out
+}
+
+/** The size under which a change gets one fast critic, and the model it runs on (null: the reviewer's own). */
+function fastReview(v: unknown, errors: string[]): Config['fastReview'] {
+  const fallback = DEFAULTS.fastReview
+  if (v === undefined) {
+    return fallback
+  }
+  if (!isObject(v)) {
+    errors.push('fastReview: expected { "maxFiles", "maxLines", "model" }; using the default')
+
+    return fallback
+  }
+  errors.push(...unknownKeys(v, ['maxFiles', 'maxLines', 'model'], 'fastReview.'))
+  const sub: string[] = []
+  const model = v.model === undefined ? fallback.model : v.model === null || (typeof v.model === 'string' && v.model.trim() !== '') ? (v.model as string | null) : (sub.push('model: expected a model name or null; using the default'), fallback.model)
+  const out = {
+    maxFiles: whole(v, 'maxFiles', fallback.maxFiles, 100_000, sub),
+    maxLines: whole(v, 'maxLines', fallback.maxLines, 10_000_000, sub),
+    model,
+  }
+  errors.push(...sub.map(error => `fastReview.${error}`))
 
   return out
 }
@@ -960,7 +1007,8 @@ export function parseConfig(text: string): Parsed {
 
   const cfg: Config = {
     verify,
-    verifyTimeoutSec: whole(raw, 'verifyTimeoutSec', DEFAULTS.verifyTimeoutSec, 600, errors),
+    verifyTimeoutSec: whole(raw, 'verifyTimeoutSec', DEFAULTS.verifyTimeoutSec, 600, errors, 'Mark long checks "background": true in verify: they run with no time limit, and only shipping waits for them'),
+    stopTimeoutSec: whole(raw, 'stopTimeoutSec', DEFAULTS.stopTimeoutSec, 600, errors),
     protected: strings(raw, 'protected', DEFAULTS.protected, errors),
     tests: strings(raw, 'tests', DEFAULTS.tests, errors),
     secrets: strings(raw, 'secrets', DEFAULTS.secrets, errors),
@@ -977,6 +1025,7 @@ export function parseConfig(text: string): Parsed {
     instructionMaxLines: whole(raw, 'instructionMaxLines', DEFAULTS.instructionMaxLines, 10_000, errors),
     defaultBranch,
     blastRadius: blastRadius(raw.blastRadius, errors),
+    fastReview: fastReview(raw.fastReview, errors),
     approvals: approvals(raw.approvals, errors),
     reviewers: reviewers(raw.reviewers, errors),
     models: models(raw.models, errors),

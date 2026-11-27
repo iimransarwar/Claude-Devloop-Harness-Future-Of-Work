@@ -50,7 +50,7 @@ Dismissing any of them cancels and writes nothing.
 | How strict | `Watch only (recommended)`, `Block from the start` | `"mode"`: `observe` or `enforce`. |
 | What runs your tests | the commands found, `None for now`, or your own under Other; `I'll add it later` when none are found | The `verify` list. |
 | Who approves risky merges | `Just me (recommended)`, `Two people` | `approvals` of `low 0, medium 1, high 1` for one person; the defaults (`high 2`) for two. |
-| Cache-guard (only when Python 3.8 or later is found and it is not installed) | `Yes, everything (recommended)`, `Yes, but keep normal replies`, `Not now` | `cache install --all`, `cache install --notify`, or nothing. |
+| Cache-guard (only when Python 3.8 or later is found and it is not installed) | `Yes, everything (recommended)`, `Yes, but keep normal replies`, `Not now` | `cache install --all`, `cache install --notify`, or nothing. `--all` also keeps the cache warm while you are away (see below). |
 
 It then writes `devloop.json` (with the default branch it finds),
 `REVIEW.md`, `evals/README.md` and, if there is no `CLAUDE.md`, an
@@ -714,6 +714,7 @@ reach the check, and the shell reads no profile or rc file.
 | Tool | What it does |
 | --- | --- |
 | `feature_check` | Runs one feature's own check and records the result; the only way a feature passes. |
+| `devloop_review` | Asks for a review round once the whole change is done. Refused when `autoReview` is off, while a spec is being written, for a subagent, at the loop limit, or when this code was already reviewed. |
 | `devloop_status` | Reads the gate, changing nothing, with each open finding to fix as its full line (deferred findings and notes counted, not listed); `detail: true` adds the cache meter and the context cost. |
 | `devloop_blocked` | Says it cannot go on and why; you are told and the turn may end. |
 | `devloop_handoff` | Records a structured handoff entry in the harness's state (never the working tree); the harness adds the facts, and the next session's first prompt is briefed from it. |
@@ -874,8 +875,9 @@ error keeps the gate shut until it is fixed.
 | --- | --- | --- |
 | `mode` | `"enforce"` (`init` writes `"observe"`) | `"observe"` records what the guards would refuse; `"enforce"` refuses it. |
 | `defaultBranch` | `"main"` | The branch changes are measured against and merged into. |
-| `verify` | `[]` | Checks, in order. Each is a command string (a `fast` check) or `{ "run": "<command>", "profile": "fast" \| "full", "when": ["<glob>", ...] }`. A single string is one check. |
-| `verifyTimeoutSec` | `300` | Time limit for each check, up to 600. |
+| `verify` | `[]` | Checks, in order. Each is a command string (a `fast` check) or `{ "run": "<command>", "profile": "fast" \| "full", "when": ["<glob>", ...] }`. A single string is one check. Add `"background": true` to a slow suite: it never runs inside a hook, starts in the background when the agent stops, has no time limit, and its result counts only for the exact code it ran on. The command line, the pre-push hook and the fallback hooks leave background checks to CI or the session and say so. |
+| `verifyTimeoutSec` | `300` | Time limit for each foreground check, up to 600. For anything longer, mark the check `"background": true`. |
+| `stopTimeoutSec` | `60` | How long a stop waits on its fast checks. Past it devloop stops waiting, does not block the agent, and says to mark the check `"background": true`. A push still waits up to `verifyTimeoutSec`. |
 | `protected` | `devloop.json`, `REVIEW.md`, `CODEOWNERS`, `.github/CODEOWNERS`, `.claude/**`, `specs/**/features.json`, `evals/**` | Paths the agent never edits. |
 | `tests` | `**/*.test.*`, `**/*.spec.*`, `**/*_test.*`, `**/test_*.py`, `test/**`, `tests/**`, `**/__tests__/**` | Test files: locked while building. |
 | `secrets` | `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.netrc`, `**/.aws/credentials`, `**/credentials*.json` | Files never read or written. |
@@ -886,8 +888,9 @@ error keeps the gate shut until it is fixed.
 | `forbidden` | `[]` | `[{ "pattern": "<regular expression>", "why": "<reason>" }]`: commands refused, with the reason the agent is given. The production actions above are built in. |
 | `network.allow` | not set (tripwire off) | Hosts shell commands may reach. Exact names; `*.example.com` allows subdomains. Loopback is always allowed. A malformed list allows no host. |
 | `maxFixRounds` | `2` | Blocked stops per prompt before the turn ends and you are told. Up to 10. |
-| `maxReviewRounds` | `3` | Review rounds before a person must read the change. Up to 10. |
-| `autoReview` | `true` | Start a review by itself when every feature passes and verification is green, when a shipping command is refused only because no review has run, and, once a round has failed and its findings went to the agent, at the next stop that verifies the fix (in every phase, within the round cap). |
+| `maxReviewRounds` | `2` | Review rounds in one review cycle before a person must read the change: one review and one check of the fix. A cycle that passes ends, and the next review starts again at round 1. Up to 10. |
+| `fastReview` | `{ "maxFiles": 3, "maxLines": 60, "model": "sonnet" }` | A change that is not high risk and within both limits gets one fast critic: the general reviewer only, on `model` (`null`: the reviewer's own), told to report only what would block a merge. Blocking specialists still run; shadow ones sit out. Bigger or high-risk changes get the full review. |
+| `autoReview` | `true` | One review per change, when it is ready: the agent calls `devloop_review`, a push or pull request finds no review of the current code (in observe mode the review starts and the push is not held), or a spec build finishes. After a failing round, the next stop that changed the code starts one re-review of the fix. Edits after a pass mark the review out of date and start nothing until the next ready moment. Rounds never start at ordinary stops. When a review cycle ends, devloop posts one summary: the result, what was fixed, what is open for you, and the tests. |
 | `budgetUsd` | `null` | A cost cap per session, against a client-side estimate. |
 | `instructionMaxLines` | `200` | `/devloop doctor` flags instruction files longer than this. |
 | `instructionMaxBytes` | `32768` | Bytes of launch-loaded instruction text (instruction files outside a `skills` folder, plus each skill's description) before doctor reports it. |
@@ -908,9 +911,9 @@ error keeps the gate shut until it is fixed.
 | `pruneWindowDays` | `30` | Days without a hit after which prune lists a rule as never fired. |
 | `claims` | `{ "leaseMinutes": 30 }` | How long a session's claim on a feature lives unless that session's activity renews it (at most once a minute). 1 to 1440. |
 | `followUp` | `{ "ci": true, "intervalSec": 120, "timeoutMin": 60 }` | After a pull request is created or pushed to, poll its checks and reviews through `gh` every `intervalSec` (at least 30) for up to `timeoutMin`; `ci: false` turns it off. Silently off where `gh` is missing or signed out (doctor says which). |
-| `grounding` | `{ "mode": <the policy's mode>, "fresh": "turn", "also": [], "never": [] }` | A person's question of fact is checked at the source before it is answered (see [Grounding](#grounding-check-before-you-answer)): `mode` is `"off"`, `"observe"` (tell you) or `"enforce"` (refuse the stop once), and follows `mode` when left out; `fresh: "tree"` also counts a look in an earlier turn while the tree is unchanged; `also` and `never` are case-insensitive regular expressions that add prompts to, or remove them from, what counts as a question. |
+| `grounding` | `{ "mode": <the policy's mode>, "fresh": "turn", "also": [], "never": [] }` | A person's question of fact is checked at the source before it is answered (see [Grounding](#grounding-check-before-you-answer)): `mode` is `"off"`, `"observe"` (tell you) or `"enforce"` (refuse the stop once); left out, it is `"observe"` (a hint, never a refused stop) unless the policy's `mode` is `"off"`; `fresh: "tree"` also counts a look in an earlier turn while the tree is unchanged; `also` and `never` are case-insensitive regular expressions that add prompts to, or remove them from, what counts as a question. |
 | `loop` | `{ "failedRounds": 6 }` | The loop limit: failed rounds (a stop handed back for a failed check, a review round that ended FAIL) on one branch before devloop hands nothing more back and asks you to decide; `/devloop continue [n]` allows more. Shipping does not reset the count; a new branch does. `0` turns it off. Up to 100. |
-| `learning` | `{ "auto": "trial", "repeats": 3, "promoteHits": 3, "maxTrial": 20, "maxRuns": 3 }` | Learning without being asked. `auto`: `"off"` (nothing by itself; `/devloop learn` as before), `"propose"` (automatic lessons, and a proposer run when a repeat reaches `repeats` occurrences or a change closes with one waiting) or `"trial"` (also: a proposed content rule goes on trial, recording hits and refusing nothing). A trial rule at `promoteHits` hits is offered to you once; at most `maxTrial` trial rules and `maxRuns` proposer runs per session (none while the budget is spent, a review runs, or on a turn no person started). `repeats` and `promoteHits` from 1 to 100. A wrong `auto` is read as `"off"`. |
+| `learning` | `{ "auto": "off", "repeats": 3, "promoteHits": 3, "maxTrial": 20, "maxRuns": 3 }` | Learning without being asked. `auto`: `"off"` (nothing by itself; `/devloop learn` as before), `"propose"` (automatic lessons, and a proposer run when a repeat reaches `repeats` occurrences or a change closes with one waiting) or `"trial"` (also: a proposed content rule goes on trial, recording hits and refusing nothing). A trial rule at `promoteHits` hits is offered to you once; at most `maxTrial` trial rules and `maxRuns` proposer runs per session (none while the budget is spent, a review runs, or on a turn no person started). `repeats` and `promoteHits` from 1 to 100. A wrong `auto` is read as `"off"`. |
 | `library` | `{ "save": "auto" }` | The [spec library](#the-spec-library): `"auto"` saves an approved spec to your library when its change closes, and lets `/devloop library save` save it; `"off"` saves nothing of this repository's specs, either way. A wrong value is read as `"off"`. |
 | `testing` | `{ "scope": "targeted" }` | `"targeted"`: a pass of a check with `when` globs is kept against the content of the files they match (an edit elsewhere does not run it again), and after a failure the failed check runs first. `"full"`: every check on every tree, as before. A wrong value is read as `"full"`. |
 | `tasks` | `{ "integrate": "off" }` | The `.tasks` convention at the edges: `"observe"` records what its rules would refuse, `"enforce"` holds them. Active only where the repository has a `.tasks/` tree declaring `version: 2` and the `tasks` command is on the PATH. A wrong value stays `"off"`. |
@@ -1176,7 +1179,10 @@ reports, in one standard-library Python file. It is optional and needs Python
   backs up and edits `~/.claude/settings.json`. Uninstalling does not put
   back a status line you had before installing it: that stays in the
   backups (`~/.claude/settings.json.bak-*`), and the dialog says so. The
-  agent cannot run the script itself (rule `cache-guard`).
+  agent cannot run the script itself (rule `cache-guard`). `--all` also
+  keeps the cache warm while you are away: about one ping an hour, which uses
+  a little quota, and it stops after 12 hours or when you are back. Your Mac
+  must stay awake. Add `--no-keepwarm` to leave it off.
 - `/devloop cache doctor`, `/devloop cache report [--all] [--days N]
   [session]`, `/devloop cache status`: read-only. A session id is 8 to 64
   letters, digits and hyphens; `--days` is given once.

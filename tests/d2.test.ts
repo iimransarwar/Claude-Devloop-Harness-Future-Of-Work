@@ -533,7 +533,7 @@ describe('D2 4. the .tasks integration, through the engine', () => {
   })
 
   const seed = (w: World): void => {
-    w.store['loop:/repo'] = { shape: 'loop-12', value: { ...FRESH, root: '/repo', sessionId: 's1', review: { ...FRESH.review, status: 'pass', round: 1, tree: 't1' } } }
+    w.store['loop:/repo'] = { shape: 'loop-13', value: { ...FRESH, root: '/repo', sessionId: 's1', review: { ...FRESH.review, status: 'pass', round: 1, tree: 't1' } } }
     w.tree = 't2'
     w.changed = ['src/a.ts', '.tasks/a/state.md']
   }

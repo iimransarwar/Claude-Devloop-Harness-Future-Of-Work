@@ -553,6 +553,8 @@ export type PromptFacts = {
   tier: Tier
   changed: readonly string[]
   checks: readonly string[]
+  /** Each check's state on the reviewed tree, one line each (spec §4). */
+  tests?: readonly string[]
   round: number
   maxRounds: number
   /** Open findings this reviewer is to re-check. */
@@ -613,7 +615,8 @@ export function reviewPrompt(facts: PromptFacts): string {
       : 'The harness could not write the diff; read the changed files listed below directly.',
     `Risk tier: ${facts.tier}. At this tier these severities block: ${blocking}.`,
     `Changed files (${facts.changed.length}): ${facts.changed.slice(0, 60).join(', ')}${facts.changed.length > 60 ? ', …' : ''}`,
-    facts.checks.length > 0 ? `Checks you may run, exactly as written:\n${facts.checks.map(one => `  ${one}`).join('\n')}` : 'There are no checks to run.',
+    'You run nothing: the harness ran the checks, and their results are below. Judge from the diff, the code and these results.',
+    ...(facts.tests === undefined ? [] : [facts.tests.length > 0 ? `Tests on this tree (from the harness):\n${facts.tests.map(one => `  ${one}`).join('\n')}` : 'Tests on this tree: none set.']),
     `This is round ${facts.round} of ${facts.maxRounds}.`,
     facts.open.length > 0
       ? `Open findings to re-check, each by its id:\n${facts.open.map(formatFinding).join('\n')}`
@@ -631,4 +634,24 @@ export function restatePrompt(previous: string, why = 'it had no `VERDICT:` line
     `Your previous answer:\n\n${previous.trim().slice(-12_000)}`,
     contract(),
   ].join('\n\n')
+}
+
+/** The one summary a person reads when a review cycle ends (spec §5, rule 11). */
+export function cycleSummary(input: { ended: 'pass' | 'cap' | 'stalled'; round: number; cap: number; discarded: number; from: number; findings: readonly Finding[]; tests: readonly string[] }): string {
+  const ofCycle = input.findings.filter(one => Number(one.id.replace(/\D/g, '')) >= input.from)
+  const fixed = ofCycle.filter(one => one.status === 'closed').map(one => `${one.id} ${one.problem.slice(0, 60)}`)
+  const forYou = ofCycle.filter(one => one.status === 'open' && one.route === 'decision').map(one => one.id)
+  const head = input.ended === 'pass'
+    ? `Review done: passed in round ${input.round} of ${input.cap}.`
+    : input.ended === 'cap'
+      ? `Review done: all ${input.cap} rounds used and it still fails; a person reads the change.`
+      : `Review done: stopped in round ${input.round}, the same findings kept coming back; a person reads the change.`
+
+  return [
+    head,
+    `Fixed: ${fixed.join(', ') || 'none'}.`,
+    `Still open for you: ${forYou.join(', ') || 'none'}.`,
+    ...(input.discarded > 0 ? [`${input.discarded} round${input.discarded === 1 ? ' was' : 's were'} discarded because the code changed during review.`] : []),
+    `Tests: ${input.tests.length === 0 ? 'none set' : input.tests.join('; ')}`,
+  ].join('\n')
 }

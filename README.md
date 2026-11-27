@@ -192,6 +192,16 @@ it stops, reviewed before it ships, merged by a person.
   FAIL.
 - **Ready.** You read it, merge it, and close it with `/devloop done`.
 
+**One review per change.** The agent asks for a review once, when the whole
+change is done (or a push finds none). If it fails, the fix gets one
+re-check. Reviews never run at every stop. When it ends you get one summary:
+the result, what was fixed, what needs you, and the tests.
+
+**Slow tests in the background.** Mark a long suite `"background": true` in
+`devloop.json`. It starts when the agent stops, runs with no time limit, and
+its result counts only for the exact code it ran on. Nothing waits on it
+except shipping.
+
 **Risk tiers.** A change is as risky as its riskiest file. It is `high` if
 it touches a file in `tiers.high`, a protected file or an instruction file,
 `low` if every file is in `tiers.low` and no test changed, and `medium`
@@ -199,9 +209,9 @@ otherwise. A change larger than `blastRadius` moves up a tier. Medium and
 high changes need the independent review to ship.
 
 **Limits.** By default the agent gets 2 tries to fix a failing check
-(`maxFixRounds`) and 3 review rounds (`maxReviewRounds`). After 6 failed
-rounds on one branch (`loop.failedRounds`) it stops until you run
-`/devloop continue`.
+(`maxFixRounds`) and 2 review rounds (`maxReviewRounds`): one review and
+one check of the fix. After 6 failed rounds on one branch
+(`loop.failedRounds`) it stops until you run `/devloop continue`.
 
 **Where the rules are enforced.** The same policy is enforced in more than
 one place, so a missing piece does not fail open: the plugin's hooks module,
@@ -253,6 +263,9 @@ runs the gate in GitHub Actions.
 A status line that shows what Claude's prompt cache is saving you, warnings
 before moves that throw a warm cache away, and cost reports. Bundled, off by
 default, needs Python 3.8 or later. Turn it on with `/devloop cache install`.
+The `--all` choice (and `Yes, everything` in setup) also keeps the cache warm
+while you are away: about one ping an hour, which uses a little quota. It
+stops after 12 hours or when you are back, and your Mac must stay awake.
 
 ## What is in this repository
 

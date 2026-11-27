@@ -6,6 +6,7 @@ import type { CommandRunInput, CommandRunResult } from 'claude-code'
 
 import { reasonOf } from './actions'
 import { cacheGuardState, installCacheGuard } from './cachecmd'
+import { installFlags } from './cacheguard'
 import { isFromPerson } from './journal'
 import { forget, locate, save, snapshotInForce, withSnapshot } from './state'
 import type { Engine } from './state'
@@ -213,7 +214,7 @@ const INTRO =
 const STRICT_QUESTION = 'Watch only notes what devloop would have blocked and blocks nothing; Block from the start refuses what its rules forbid. How strict should it be to start?'
 const APPROVERS_QUESTION = 'A risky change needs a person to approve it before it merges; with Two people, someone working alone can never clear one. Who approves risky merges?'
 const OUTSIDE_GIT_QUESTION = `${NOT_GIT} It would only see files Claude edits: no diffs, no credential scan, no push gate. Set it up anyway?`
-export const CACHE_QUESTION = 'cache-guard (bundled, needs Python) shows how warm your prompt cache is and warns before a cold cache costs you. Installing edits your ~/.claude/settings.json (all projects): it replaces your status line with its own (a backup is kept) and adds hooks. Everything adds cache-expiry notices and makes the Lean (short replies) output style the default; normal replies adds only the notices. Install it?'
+export const CACHE_QUESTION = 'cache-guard (bundled, needs Python) shows how warm your prompt cache is and warns before a cold cache costs you. Installing edits your ~/.claude/settings.json (all projects): it replaces your status line with its own (a backup is kept) and adds hooks. Everything adds cache-expiry notices, makes the Lean (short replies) output style the default, and keeps the cache warm while you are away: about once an hour it wakes Claude for a one-word reply, which uses a little of your quota, and stops after 12 hours or when you are back. Normal replies adds only the notices. Install it?'
 const JUST_ME = { low: 0, medium: 1, high: 1 }
 
 /** A detected check in full, as a person reads it: its profile and the globs that scope it. */
@@ -346,7 +347,7 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
     cacheLine = 'cache-guard: not installed. /devloop cache install adds it later.'
   } else {
     // The answer is the person's confirmation; a failed install never fails setup.
-    const done = await installCacheGuard($, at, [cache], e).catch((): { isOk: boolean; text: string } => ({ isOk: false, text: 'exit none):\ncache-guard could not be started.' }))
+    const done = await installCacheGuard($, at, (installFlags([cache]) as { flags: string[] }).flags, e).catch((): { isOk: boolean; text: string } => ({ isOk: false, text: 'exit none):\ncache-guard could not be started.' }))
     const reason = (done.text.split('\n').slice(done.isOk ? 0 : 1).find(line => line.trim() !== '') ?? 'no output').trim().replace(/\.$/, '').slice(0, 160)
     cacheLine = done.isOk
       ? `cache-guard: installed (${cache === '--all' ? 'everything' : 'normal replies'}). Restart Claude Code to see its status line.`

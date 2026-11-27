@@ -567,7 +567,7 @@ describe('accepted: loop limits (DESIGN 4.16)', () => {
 
 describe('accepted: learning without being asked (DESIGN 4.17)', () => {
   test('A29: a trial rule counts every match of its pattern, a right line as much as a wrong one; it never refuses', () => {
-    const rules = learnedRules({ ...EMPTY_LEARNED, rules: [{ id: 'learn-1', group: 'g', when: ['src/**'], pattern: 'console\\.log', why: 'w', evalTask: 'e', at: 1, status: 'trial', hits: 0, last: null, seen: [], isTold: false, promotedAt: null, evidence: { label: 'l', count: 3, sample: '' } }] }, DEFAULTS)
+    const rules = learnedRules({ ...EMPTY_LEARNED, rules: [{ id: 'learn-1', group: 'g', when: ['src/**'], pattern: 'console\\.log', why: 'w', evalTask: 'e', at: 1, status: 'trial', hits: 0, last: null, seen: [], isTold: false, promotedAt: null, evidence: { label: 'l', count: 3, sample: '' } }] }, { ...DEFAULTS, learning: { ...DEFAULTS.learning, auto: 'trial' } })
     // A log line a person wants (a CLI's own output) is a hit like a stray one.
     const hits = judgeContent('src/cli.ts', '', 'console.log(usage)  // the CLI prints its help', rules)
     expect(hits.map(one => [one.rule.id, one.verdict])).toEqual([['learn-1', 'note']])
@@ -578,7 +578,7 @@ describe('accepted: learning without being asked (DESIGN 4.17)', () => {
     const read = parseProposals('P1 | check:npm test | rule | src/** | ^import | as the output said | none', ['check:npm test'])
     expect(read.proposals).toHaveLength(1)
     const one = { ...read.proposals[0]!, id: 'learn-1' }
-    expect(trialReason(one, EMPTY_LEARNED, [], DEFAULTS, 'check:npm test')).toBe(null)
+    expect(trialReason(one, EMPTY_LEARNED, [], { ...DEFAULTS, learning: { ...DEFAULTS.learning, auto: 'trial' } }, 'check:npm test')).toBe(null)
   })
 })
 

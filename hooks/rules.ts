@@ -2809,15 +2809,22 @@ export const isCredentialName = (name: string): boolean =>
 
 // ---------------------------------------------------------------- verification
 
+/** Whether a check applies to a change: it has no `when`, or a changed file matches one of its globs. */
+const isApplying = (step: Step, changed: readonly string[]): boolean =>
+  step.when === null || changed.some(file => matchesAny(file, step.when ?? []))
+
 /**
  * The checks a profile runs on a change, in the order written: `full` runs
- * the fast checks too. A check with `when` runs only if a changed file matches.
+ * the fast checks too. A check with `when` runs only if a changed file
+ * matches. Background checks are in neither profile (`backgroundFor`).
  */
 export function stepsFor(steps: readonly Step[], profile: Profile, changed: readonly string[]): Step[] {
-  return steps.filter(one =>
-    (profile === 'full' || one.profile === 'fast') &&
-    (one.when === null || changed.some(file => matchesAny(file, one.when ?? []))))
+  return steps.filter(one => one.background !== true && (profile === 'full' || one.profile === 'fast') && isApplying(one, changed))
 }
+
+/** The background checks that apply to a change, in the order written: by `when`, as `stepsFor` decides. */
+export const backgroundFor = (steps: readonly Step[], changed: readonly string[]): Step[] =>
+  steps.filter(one => one.background === true && isApplying(one, changed))
 
 /**
  * Whether a failing check deserves one rerun before it blocks: it passed on

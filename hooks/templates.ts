@@ -187,6 +187,7 @@ Facts that change (the verify commands, the phase, the gate) arrive as
 - A question only a person can settle: record it with the devloop_question tool and carry on with what does not depend on it.
 - Friction worth fixing (a flag the help lists but the tool rejects, a command that exits 0 on an error, a check that passes for the wrong reason, an instruction that proved wrong, the same error after several tries): file it with the devloop_papercut tool and carry on.
 - You never grade or approve your own change; a separate reviewer does. Do not push or open a pull request until the gate is green, and leave merging to a person.
+- When the whole change is done, call the devloop_review tool once, not after each step: a separate reviewer starts on the tree as it stands. Do not edit files until its verdict arrives: a verdict on a tree that has changed is discarded. When a round fails, fix its findings and stop: devloop re-reviews the fix by itself.
 - Push the branch you are on with \`git push -u origin HEAD\`, as its own command: a push of any other shape (a bare \`git push\`, other refspecs or options, \`git -c …\`, a \`GIT_*\` variable on the line) is refused. cache-guard's script is a person's to run, through \`/devloop cache\`.
 - Commands that discard work (\`git reset --hard\`, \`git clean -f\`, \`rm -rf\` of the repository) are refused with a safer command named: use that one.
 - When a guard refuses something, do not look for another way round it. If you cannot go on, call the devloop_blocked tool with the reason and stop.

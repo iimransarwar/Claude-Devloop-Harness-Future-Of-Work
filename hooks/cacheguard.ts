@@ -24,7 +24,7 @@ export const INSTALL_FLAGS: Readonly<Record<string, string>> = {
   '--keepwarm': 'keeps a long session\'s cache warm while you are away, by waking Claude for a one-word reply just before it expires',
   '--handoff': 'saves a handoff before a long session\'s cache dies, and adds the /handoff-save and /handoff-load commands',
   '--lean': 'makes the bundled Lean output style your default',
-  '--all': '--notify and --lean; it never turns on the trimmer (only --trim does)',
+  '--all': '--notify, --lean and --keepwarm; it never turns on the trimmer (only --trim does)',
   '--no-trim': 'turns the Bash trimmer back off',
   '--no-notify': 'turns expiry notifications back off',
   '--no-keepwarm': 'turns keep-warm back off',
@@ -41,6 +41,11 @@ export function installFlags(words: readonly string[]): { flags: string[] } | { 
     if (!flags.includes(word)) {
       flags.push(word)
     }
+  }
+
+  if (flags.includes('--all') && !flags.includes('--keepwarm') && !flags.includes('--no-keepwarm')) {
+    // devloop's "everything" also keeps the cache warm; cache-guard's own --all does not.
+    flags.splice(flags.indexOf('--all') + 1, 0, '--keepwarm')
   }
 
   return { flags }

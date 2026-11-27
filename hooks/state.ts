@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
+import type { CheckRecord, FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
 import { EMPTY_CACHE } from './cache'
 import type { CacheState } from './cache'
 import { parseConfig } from './config'
@@ -44,7 +44,9 @@ export { FRESH } from './fresh'
 
 // Change the tag when Loop's fields change: it declines what an earlier
 // version stored, which outlives a reload.
-const SHAPE = 'loop-12'
+const SHAPE = 'loop-13'
+/** The shape before background checks: the same loop without `background` and `verify.runs`, which `upgraded` fills. */
+const PREVIOUS = 'loop-12'
 const LOOP = atom({ plugin: 'devloop', key: 'loop' } as const, FRESH, { shape: SHAPE })
 const MODE = atom({ plugin: 'devloop', key: 'mode' } as const, 'off' as Mode)
 /** The pane's tab: written from a tab button's handler, never while drawing. */
@@ -280,7 +282,9 @@ export function brief(loop: Loop): string {
     if (loop.tier !== 'low') {
       // A verdict with a promoted checklist failure on its tree is a failing verdict wherever it is shown (final round, D2 F2).
       const isFailing = loop.review.status === 'pass' && (loop.checklistFails ?? []).some(one => one.tree !== null && one.tree === loop.review.tree)
-      parts.push(`review ${mark(isFailing ? 'fail' : loop.review.status)}`)
+      // A cycle that passed on another tree, its verdict reset by a verification of the moved tree: out of date (rule 15), as the gate's row says.
+      const isStale = loop.review.status === 'none' && loop.review.cycle.ended === 'pass' && loop.review.tree !== null && loop.review.tree !== loop.tree
+      parts.push(`review ${isStale ? 'stale' : mark(isFailing ? 'fail' : loop.review.status)}`)
     }
   }
 
@@ -308,7 +312,11 @@ export async function save($: Engine, root: string, change: (loop: Loop) => Loop
  */
 export async function restore($: Engine, root: string, sessionId: string | null): Promise<{ loop: Loop; isReload: boolean }> {
   const stored = (await $.store.get(`loop:${root}`)) as { shape?: string; value?: Loop } | undefined
-  const base = stored?.shape === SHAPE && stored.value !== undefined ? stored.value : FRESH
+  const base = upgraded(stored)
+  // An upgraded loop is kept under this shape at once.
+  if (stored?.value !== undefined && (stored.shape === PREVIOUS || (stored.shape === SHAPE && base !== stored.value))) {
+    await $.store.set(`loop:${root}`, { shape: SHAPE, value: base })
+  }
   const isReload = sessionId !== null && base.sessionId === sessionId
   const loop = await update($, LOOP, (): Loop => isReload
     ? { ...base, root }
@@ -316,7 +324,8 @@ export async function restore($: Engine, root: string, sessionId: string | null)
         ...base,
         root,
         sessionId,
-        review: base.review.status === 'running' ? { ...base.review, status: 'none' as const, agentId: null, agents: [] } : base.review,
+        // A round whose session ended gave no verdict: like an interrupted round, it does not use up the cap.
+        review: base.review.status === 'running' ? { ...base.review, status: 'none' as const, agentId: null, agents: [], round: Math.max(0, base.review.round - 1) } : base.review,
         allow: [],
         refusals: FRESH.refusals,
         blocked: null,
@@ -330,12 +339,48 @@ export async function restore($: Engine, root: string, sessionId: string | null)
   return { loop, isReload }
 }
 
+/**
+ * The loop a stored value holds: one of this shape as it is; one of the
+ * shape before (an upgrade mid-change) with the fields added since filled
+ * empty, so its phase, findings, verdicts, passes and loop limit carry; any
+ * older one, or none, fresh.
+ */
+function upgraded(stored: { shape?: string; value?: Loop } | undefined): Loop {
+  if (stored?.value === undefined) {
+    return FRESH
+  }
+  if (stored.shape === SHAPE) {
+    return withCycle(stored.value)
+  }
+  if (stored.shape !== PREVIOUS) {
+    return FRESH
+  }
+  const before = stored.value as Omit<Loop, 'background' | 'verify'> & { verify: Omit<Loop['verify'], 'runs'> }
+
+  return withCycle({ ...before, background: {}, verify: { ...before.verify, runs: {} } })
+}
+
+/**
+ * A loop kept before review cycles (rule 5) given one: a review that passed
+ * ended its cycle with a pass, so the cap does not refuse the next round,
+ * and the tree of a round that settled is the one the next round reads from.
+ */
+function withCycle(loop: Loop): Loop {
+  const review = loop.review as Omit<Loop['review'], 'cycle'> & { cycle?: Loop['review']['cycle'] }
+  if (review.cycle !== undefined) {
+    return loop
+  }
+  const isSettled = review.status === 'pass' || review.status === 'fail'
+
+  return { ...loop, review: { ...review, cycle: { ...FRESH.review.cycle, ended: review.status === 'pass' ? 'pass' : null, settledTree: isSettled ? review.tree : null } } }
+}
+
 /** Marks a review abandoned when it has been `running` past its lifetime: its agent is not coming back. */
 export async function abandonStale($: Engine, root: string): Promise<void> {
   const loop = await loopOf($)
   const now = await $.clock.now()
   if (loop.review.status === 'running' && now - loop.review.at > REVIEW_LIFETIME_MS) {
-    await save($, root, before => note({ ...before, review: { ...before.review, status: 'none', agentId: null, agents: [] } }, 'review', `review round ${before.review.round} abandoned: no verdict in 30 minutes`, now))
+    await save($, root, before => note({ ...before, review: { ...before.review, status: 'none', agentId: null, agents: [], round: Math.max(0, before.review.round - 1) } }, 'review', `review round ${before.review.round} abandoned: no verdict in 30 minutes (it does not count toward the cap)`, now))
   }
 }
 
@@ -530,7 +575,7 @@ git -c core.quotePath=false ls-tree -r --full-tree "$1"
  * check with no key (git could not list the tree, or no file matches) has
  * none, so it runs as before.
  */
-async function coveredKeys($: Engine, at: Place, steps: readonly Step[], tree: string | null): Promise<Record<string, string>> {
+export async function coveredKeys($: Engine, at: Place, steps: readonly Step[], tree: string | null): Promise<Record<string, string>> {
   const scoped = steps.filter(one => one.when !== null)
   if (tree === null || scoped.length === 0) {
     return {}
@@ -914,7 +959,7 @@ export async function run($: Engine, command: string, cwd: string, timeoutSec: n
 }
 
 /** Keeps a check's whole output where the builder can read it (and not write it); the path, or null. */
-async function keepOutput($: Engine, at: Place, command: string, raw: string): Promise<string | null> {
+export async function keepOutput($: Engine, at: Place, command: string, raw: string): Promise<string | null> {
   const file = outputPath(await stateDirOf($, at.root), command)
   const saved = await $.fs.write(file, raw).then(() => file, () => null)
   if (saved !== null) {
@@ -941,6 +986,8 @@ export type Verified = {
   covered: Record<string, string>
   /** Checks whose pass carried to this tree because the files they cover did not change (targeted testing). */
   carried: string[]
+  /** What each check this run ran did on the tree, with how long it took, by command (`loop.verify.runs`). */
+  runs: Record<string, CheckRecord>
 }
 
 /**
@@ -950,7 +997,7 @@ export type Verified = {
  * first, and a check with \`when\` whose covered files are as they were when
  * it passed is not run again.
  */
-async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Profile, tree: string | null): Promise<Verified> {
+async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Profile, tree: string | null, timeoutSec = cfg.verifyTimeoutSec): Promise<Verified> {
   // A pass is recorded per check with the tree it ran on: a check that
   // already passed on this very tree is not run again, and every other one is.
   const failedLast = loop.verify.status === 'fail' ? loop.verify.failed : null
@@ -964,6 +1011,7 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
   const passed: string[] = []
   const carried: string[] = []
   const passedKeys: Record<string, string> = {}
+  const runs: Record<string, CheckRecord> = {}
   for (const step of steps) {
     if (tree !== null && loop.verify.passedOn[step.run] === tree) {
       passed.push(step.run)
@@ -977,19 +1025,23 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
       Object.assign(passedKeys, covered(step.run))
       continue
     }
-    let ran = await run($, step.run, at.root, cfg.verifyTimeoutSec, cfg.checkEnv)
+    const began = await $.clock.now()
+    let ran = await run($, step.run, at.root, timeoutSec, cfg.checkEnv)
     // A check that could not run is not a flake: rerunning it changes nothing.
     if (!ran.isPassing && ran.outcome === 'fail') {
       const passedOn = loop.verify.passedOn[step.run]
       const since = passedOn === undefined || tree === null ? null : passedOn === tree ? [] : await changedBetween($, at, passedOn, tree)
       if (isFlakeSuspect(step, passedOn !== undefined, since)) {
-        ran = await run($, step.run, at.root, cfg.verifyTimeoutSec, cfg.checkEnv)
+        ran = await run($, step.run, at.root, timeoutSec, cfg.checkEnv)
         if (ran.isPassing) {
           flaky.push(step.run)
         }
       }
     }
+    // How long the check took, its rerun included: the summary names it (rule 6).
+    const ended = await $.clock.now()
     const saved = await keepOutput($, at, step.run, ran.raw)
+    runs[step.run] = { tree, outcome: ran.outcome, at: ended, durationMs: Math.max(0, ended - began), lines: ran.isPassing ? '' : ran.output.split('\n').slice(0, 10).join('\n'), isOlderTree: false, saved }
     if (!ran.isPassing) {
       return {
         isPassing: false,
@@ -1002,13 +1054,14 @@ async function verify($: Engine, at: Place, cfg: Config, loop: Loop, profile: Pr
         infra: ran.outcome === 'fail' || ran.outcome === 'pass' ? null : ran.outcome,
         covered: passedKeys,
         carried,
+        runs,
       }
     }
     passed.push(step.run)
     Object.assign(passedKeys, covered(step.run))
   }
 
-  return { isPassing: true, failed: null, output: '', fingerprint: null, flaky, passed, saved: null, infra: null, covered: passedKeys, carried }
+  return { isPassing: true, failed: null, output: '', fingerprint: null, flaky, passed, saved: null, infra: null, covered: passedKeys, carried, runs }
 }
 
 export type VerifiedNow = {
@@ -1023,10 +1076,10 @@ export type VerifiedNow = {
  * outcome down. The one place that sets `verify`, so a pass always names the
  * tree and the profile it covers.
  */
-export async function verifyNow($: Engine, at: Place, cfg: Config, profile: Profile): Promise<VerifiedNow> {
+export async function verifyNow($: Engine, at: Place, cfg: Config, profile: Profile, timeoutSec = cfg.verifyTimeoutSec): Promise<VerifiedNow> {
   const snap = await snapshot($, at, cfg)
   const before = withSnapshot(await loopOf($), snap, cfg)
-  const ran = await verify($, at, cfg, before, profile, snap.tree)
+  const ran = await verify($, at, cfg, before, profile, snap.tree, timeoutSec)
   const now = await $.clock.now()
   const isRepeat = ran.fingerprint !== null && ran.fingerprint === before.verify.fingerprint
   await bump($, at.root, 'verify-runs')
@@ -1075,6 +1128,8 @@ export async function verifyNow($: Engine, at: Place, cfg: Config, profile: Prof
           passedOn,
           covered,
           infra: ran.infra,
+          // Merged: a background check's record is never dropped by a foreground run.
+          runs: { ...latest.verify.runs, ...ran.runs },
         },
       },
       'verify',

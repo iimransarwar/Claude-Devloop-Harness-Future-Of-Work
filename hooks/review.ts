@@ -12,7 +12,10 @@ import {
   unreadable, unverifiedBlocking, wouldBlock,
 } from './findings'
 import type { Answer, Parsed } from './findings'
-import { atLeast, featureCounts, specialistsFor, tierFor } from './gate'
+import { cycleSummary } from './findings'
+import { testLines } from './testruns'
+import { capText, featureCounts, isCapSpent, isStallSpent, NOTHING_TEXT, reviewRefusal, specialistsFor, STALLED_TEXT, tierFor } from './gate'
+import { FRESH } from './fresh'
 import { isSecret, relative } from './rules'
 import { bump, coverageNow, git, judgeFeatureCheck, note, policyInForce, readFeatures, record, save, snapshot, snapshotInForce, loopOf, specHash, writeReviewDiff } from './state'
 import type { Engine, Place, Snapshot } from './state'
@@ -34,7 +37,8 @@ import { finishChecklist, isChecklistAgent, startChecklists } from './checklists
  * command like any other.
  */
 export async function reviewerChecks($: Engine, at: Place, cfg: Config, loop: Loop): Promise<string[]> {
-  const verify = cfg.verify.map(one => one.run)
+  // Background checks are not the reviewer's to run (rule 8): it reads their results instead.
+  const verify = cfg.verify.filter(one => one.background !== true).map(one => one.run)
   if (loop.phase !== 'build' || loop.spec === null || loop.approvedHash === null || (await specHash($, at, loop)) !== loop.approvedHash) {
     return verify
   }
@@ -78,6 +82,9 @@ function briefOf(one: Reviewer | null): string {
     : `${REVIEWER_BRIEF}\n\nYou are the "${one.name}" specialist reviewer: report only problems of ${one.name}, and leave everything else to the general reviewer.`
 }
 
+/** What a fast critic is told: a small change gets a quick, decisive read. */
+export const FAST_BRIEF = 'This is a small change: a fast review. Read the diff and the test results, report only problems that would block a merge (at most 5), and give the verdict. Do not explore beyond the changed files and what they call.'
+
 /** The model a reviewer runs on: its own, then the policy's for its kind; undefined is the session's. */
 function modelOf(cfg: Config, name: string): string | undefined {
   if (name === 'general') {
@@ -105,16 +112,14 @@ const nextIdOf = (findings: readonly Finding[]): number => 1 + findings.reduce((
 /**
  * A change that shipped closes its review count (Z1): once the gate passed a
  * push and the check after the fact confirmed that what shipped is what the
- * gate judged, the round number and the stall flag return to zero for what
- * comes next, since the cap is for one change. A round that passed without a
- * push, followed by more edits, still counts. A round in progress is left
- * alone.
+ * gate judged, the round number, the stall flag and the review cycle start
+ * again for what comes next (C6). A round in progress is left alone.
  */
 export async function closeShippedReview($: Engine, at: Place): Promise<void> {
   const now = await $.clock.now()
   await save($, at.root, before => (before.review.status === 'running' || (before.review.round === 0 && before.review.stalled === 0 && !before.review.isStalled)
     ? before
-    : note({ ...before, review: { ...before.review, round: 0, stalled: 0, isStalled: false, isLooping: false } }, 'review', 'the change shipped through the gate: the review count starts again for the next one', now)))
+    : note({ ...before, review: { ...before.review, round: 0, stalled: 0, isStalled: false, isLooping: false, cycle: FRESH.review.cycle } }, 'review', 'the change shipped through the gate: the review count starts again for the next one', now)))
 }
 
 const ROUND_DELTA = `
@@ -123,9 +128,10 @@ git -c core.quotePath=false diff --no-renames --no-ext-diff --no-textconv "$1" "
 `
 
 /**
- * The diff since the tree the previous round read (DESIGN 4.16, decision 8),
- * for round 2 and later: null when there is no earlier tree, the tree has
- * not moved, or git cannot give it, and the round reads the whole change.
+ * The diff since the tree the cycle's last settled round read (DESIGN 4.16,
+ * decision 8), for round 2 and later: null when no round settled (a round
+ * never reads only the lines since a tree no one reviewed), the tree has not
+ * moved, or git cannot give it, and the round reads the whole change.
  */
 async function roundDelta($: Engine, at: Place, from: string | null, to: string | null): Promise<string | null> {
   if (from === null || to === null || from === to) {
@@ -155,22 +161,24 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   if (loop.review.status === 'running') {
     return `Review round ${loop.review.round} is already running.`
   }
-  if (loop.review.isStalled) {
-    return 'The review loop stopped after two rounds in a row closed no finding. This change needs a person to read it; /devloop done closes it when they have.'
+  if (isStallSpent(loop.review)) {
+    return STALLED_TEXT
   }
-  if (loop.review.round >= cfg.maxReviewRounds) {
-    return `The review cap of ${cfg.maxReviewRounds} rounds is spent. This change needs a person to read it; /devloop done closes it when they have.`
+  if (isCapSpent(loop.review, cfg)) {
+    return capText(cfg)
   }
   if (loop.tier === 'none') {
-    return 'Nothing has changed, so there is nothing to review.'
+    return NOTHING_TEXT
   }
   const refused = await limitRefusal($, cfg, snap.branch, isPerson)
   if (refused !== null) {
     return refused
   }
-  const round = loop.review.round + 1
-  // Round 2 and later reads the fix: the diff since the tree the previous round read (decision 8).
-  const delta = round > 1 ? await roundDelta($, at, loop.review.tree, snap.tree) : null
+  // The first round of a change, or the first after a cycle that passed, is round 1 of a new cycle (rules 5, 15).
+  const isNewCycle = loop.review.round === 0 || loop.review.cycle.ended === 'pass'
+  const round = (isNewCycle ? 0 : loop.review.round) + 1
+  // Round 2 and later reads the fix: the diff since the tree the cycle's last settled round read (decision 8).
+  const delta = round > 1 ? await roundDelta($, at, loop.review.cycle.settledTree, snap.tree) : null
   const checks = await reviewerChecks($, at, cfg, loop)
   // The reviewer reads a diff the harness wrote, untracked files included,
   // from the base it measured: it needs no git command of its own.
@@ -179,15 +187,21 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   const reviewMd = await baseFile($, at, snap.base, 'REVIEW.md')
   const nextId = nextIdOf(loop.findings)
   const tier = tierFor(loop, cfg)
+  // A small change gets one fast critic: the general reviewer on the fast model, and only the specialists the gate needs.
+  const isFast = tier !== 'high' && snap.size.files <= cfg.fastReview.maxFiles && snap.size.lines <= cfg.fastReview.maxLines
+  const specialists = specialistsFor(loop, cfg).filter(one => !isFast || one.mode === 'blocking')
   // The open findings of a reviewer that no longer applies go to the general reviewer for re-check.
-  const names = ['general', ...specialistsFor(loop, cfg).map(one => one.name)]
+  const names = ['general', ...specialists.map(one => one.name)]
   const recheckedBy = (one: Finding): string => (names.includes(one.reviewer) ? one.reviewer : 'general')
+  // The reviewer runs nothing (it has no shell): it reads the checks' and the features' results here.
+  const features = Object.entries(loop.features).map(([id, one]) => (one.passes && one.tree === loop.tree ? `✓ feature ${id} passes on this tree` : `✗ feature ${id} not passing on this tree`))
+  const tests = [...testLines(loop, cfg, await $.clock.now()), ...features]
   const promptFor = (name: string, one: Reviewer | null): string => reviewPrompt({
-    brief: briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, round, maxRounds: cfg.maxReviewRounds,
+    brief: isFast && one === null ? `${briefOf(one)}\n\n${FAST_BRIEF}` : briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, tests, round, maxRounds: cfg.maxReviewRounds,
     open: loop.findings.filter(each => each.status === 'open' && each.route === 'fix' && recheckedBy(each) === name), nextId, delta,
   })
   const spawn = async (name: string, one: Reviewer | null): Promise<string | { deny: string }> => {
-    const model = modelOf(cfg, name)
+    const model = isFast && name === 'general' ? (cfg.fastReview.model ?? modelOf(cfg, name)) : modelOf(cfg, name)
     const started = await $.agent.spawn({
       prompt: promptFor(name, one),
       description: `devloop review, round ${round}${one === null ? '' : ` (${name})`}`,
@@ -203,7 +217,7 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   }
   const agents: ReviewAgent[] = [{ agentId: general, name: 'general', mode: 'general', isRetry: false, answer: null }]
   const missing: string[] = []
-  for (const one of specialistsFor(loop, cfg)) {
+  for (const one of specialists) {
     const started = await spawn(one.name, one)
     if (typeof started === 'string') {
       agents.push({ agentId: started, name: one.name, mode: one.mode, isRetry: false, answer: null })
@@ -222,12 +236,14 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   await save($, at.root, before => {
     // A reviewer that could not start last round is started again: that finding ends. One whose answer could not be read stays for a person.
     let findings = before.findings.map(one => (isRestartable(one) && one.status === 'open' ? { ...one, status: 'closed' as const } : one))
+    // A new cycle starts with no stall and no loop, its first finding id the next one (rule 5).
+    const reset = isNewCycle ? { stalled: 0, isStalled: false, isLooping: false, cycle: { ...FRESH.review.cycle, from: nextIdOf(before.findings) } } : {}
     for (const name of missing) {
       findings = [...findings, harnessFinding(name, `the ${name} reviewer could not start`, round, nextIdOf(findings), true)]
     }
 
     return note(
-      { ...before, findings, review: { ...before.review, status: 'running', round, agentId: general, isAuto, at: now, tree: snap.tree, agents, isScoped: delta !== null } },
+      { ...before, findings, review: { ...before.review, ...reset, status: 'running', round, agentId: general, isAuto, at: now, tree: snap.tree, agents, isScoped: delta !== null } },
       'review',
       `review round ${round} started${agents.length > 1 ? ` with ${agents.slice(1).map(one => one.name).join(', ')}` : ''}${delta === null ? '' : ', on the lines changed since the last round'}`,
       now,
@@ -251,7 +267,7 @@ async function readCited($: Engine, at: Place, cfg: Config, files: readonly stri
   return out
 }
 
-/** Resets a round that will not finish: interrupted, or its tree moved. It does not count. */
+/** Resets a round that was interrupted: it does not count. */
 async function dropRound($: Engine, at: Place, why: string): Promise<void> {
   const now = await $.clock.now()
   await save($, at.root, before =>
@@ -344,12 +360,11 @@ export async function finishReview($: Engine, at: Place, agentId: string, answer
     return
   }
   // A verdict covers the tree the round started on. One that arrives after
-  // the tree moved is about code that no longer exists: it is discarded and
-  // does not count as a round.
+  // the tree moved is about code that no longer exists: it is discarded, and
+  // still uses its round, so spend stays bounded (rule 11).
   const snap = await snapshot($, at, cfg)
   if (snap.tree !== null && started.review.tree !== null && snap.tree !== started.review.tree) {
-    await dropRound($, at, `review round ${started.review.round} discarded: the tree moved while it ran`)
-    $.ui.toast('devloop: a review verdict arrived for a tree that has since changed; it was discarded. The next stop starts a fresh round.')
+    await discardRound($, at, cfg, started)
 
     return
   }
@@ -387,6 +402,42 @@ export async function finishReview($: Engine, at: Place, agentId: string, answer
     return
   }
   await settle($, at, cfg, loop, snap)
+}
+
+/**
+ * Throws away a round whose tree moved while it ran (rule 11). Unlike an
+ * interrupted round it keeps its number, so it counts toward the cycle's
+ * cap, and the cycle counts it as discarded; a discarded last round spends
+ * the cap. It counts nothing toward the loop limit. What starts the next
+ * round: the next stop, for the re-review of a fix (rule 14) or a finished
+ * spec build; otherwise the next ready moment (rule 13); with autoReview
+ * off, a person.
+ */
+async function discardRound($: Engine, at: Place, cfg: Config, started: Loop): Promise<void> {
+  const { round } = started.review
+  const isLast = round >= cfg.maxReviewRounds
+  const now = await $.clock.now()
+  await save($, at.root, before => note({
+    ...before,
+    review: {
+      ...before.review, status: 'none', agentId: null, agents: [],
+      cycle: { ...before.review.cycle, discarded: before.review.cycle.discarded + 1, ended: isLast ? 'cap' : before.review.cycle.ended },
+    },
+  }, 'review', `review round ${round} discarded: the tree moved while it ran (it counts toward the cap)`, now))
+  const next = isLast
+    ? 'The review cap is spent, so a person reads the change.'
+    : !cfg.autoReview
+      ? 'A person starts the next round with /devloop review ("autoReview" is off).'
+      : started.review.isLooping || started.phase === 'build'
+        ? 'The next stop starts a fresh round.'
+        : 'A fresh round starts when the change is ready again: the devloop_review tool, or a push.'
+  if (isLast) {
+    // The cycle ends at the cap: its summary comes first, the discard notice last (C3).
+    const told = cycleSummary({ ended: 'cap', round, cap: cfg.maxReviewRounds, discarded: started.review.cycle.discarded + 1, from: started.review.cycle.from, findings: started.findings, tests: testLines(started, cfg, now) })
+    await save($, at.root, before => ({ ...before, review: { ...before.review, cycle: { ...before.review.cycle, summary: told } } }))
+    $.ui.toast(`devloop: ${told}`, { timeoutMs: 15_000 })
+  }
+  $.ui.toast(`devloop: a review verdict arrived for a tree that has since changed; it was discarded and counts as round ${round} of ${cfg.maxReviewRounds}. ${next}`)
 }
 
 /** Decides a round once the general and every blocking reviewer have answered: the harness, not the verdict line, decides. */
@@ -438,8 +489,10 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
   // Each id the header names is either in the list below it or says why not (11b).
   const header = roundHeader(round, settled, findings, new Set(toFix.map(one => one.id)))
   const summary = `${header.slice(0, -1)}${settled.demoted.length > 0 ? `; ${settled.demoted.join(', ')} not found at the line cited, kept as notes` : ''}${settled.unverified.length > 0 ? `; ${settled.unverified.join(', ')} not found at the line cited, for a person to check` : ''}.`
-  // A failed round whose findings go to the builder begins a review loop: the next stop that verifies a moved tree starts the next round (11a).
+  // A failed round whose findings go to the builder begins a review loop: the next stop that verifies a moved tree starts the next round (11a, rule 14).
   const isLooping = !isPassing && !isStalled && !isLast && !isStopped && toFix.length > 0
+  // The cycle ends with a pass, a stall or a failed last round; the next ready moment after a pass starts a new one (rules 5, 15).
+  const ended = isPassing ? 'pass' as const : isStalled ? 'stalled' as const : isLast ? 'cap' as const : null
   await save($, at.root, before => note({
     ...before,
     findings,
@@ -448,8 +501,15 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
     review: {
       ...before.review, status: isPassing ? 'pass' : 'fail', agentId: null, summary, at: now, stalled, isStalled, isLooping,
       agents: before.review.agents.map(one => ({ ...one, answer: one.mode === 'shadow' && one.answer === null ? null : '' })),
+      cycle: { ...before.review.cycle, ended: ended ?? before.review.cycle.ended, settledTree: before.review.tree },
     },
   }, 'review', isPassing ? `review passed in round ${round}` : `review round ${round} found problems`, now))
+  // The one summary a person reads when the cycle ends (spec §5): toast, Activity, and the agent's next prompt.
+  const cycleText = ended === null ? null : cycleSummary({ ended, round, cap: cfg.maxReviewRounds, discarded: loop.review.cycle.discarded, from: loop.review.cycle.from, findings, tests: testLines(loop, cfg, now) })
+  if (cycleText !== null) {
+    await save($, at.root, before => note({ ...before, review: { ...before.review, cycle: { ...before.review.cycle, summary: cycleText } } }, 'review', cycleText.split('\n')[0] ?? 'review done', now))
+    $.ui.toast(`devloop: ${cycleText}`, { timeoutMs: 15_000 })
+  }
   await bump($, at.root, 'review-rounds')
   await meterCost($, at.root, { kind: 'review-end' })
   for (const one of findings.filter(each => each.round === round || each.seen === round)) {
@@ -474,7 +534,9 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
     if (round === 1) {
       await bump($, at.root, 'review-first-pass')
     }
-    $.ui.toast(`devloop: review passed in round ${round}${settled.deferred.length + settled.demoted.length > 0 ? ' (with notes; /devloop findings lists them)' : ''}`)
+    if (cycleText === null) {
+      $.ui.toast(`devloop: review passed in round ${round}${settled.deferred.length + settled.demoted.length > 0 ? ' (with notes; /devloop findings lists them)' : ''}`)
+    }
     // The newest commit for which the gate was fully met (decision 4).
     await notePassing($, at, snap).catch(() => undefined)
 
@@ -517,25 +579,30 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
 }
 
 /**
- * Starts the automatic review where the loop calls for one: every feature
- * passing on a change of some risk. `autoReview`, the tier and the cap are
- * read from the policy in force (the base branch's), like the rest of the
- * review settings.
+ * Whether a verdict on record covers the tree now: a round settled (passed
+ * or failed) and its verdict was reached on this tree or carries to it, only
+ * task state having changed since (rule 5; final round, D2 F1).
  */
-export async function maybeReview($: Engine, at: Place, loop: Loop): Promise<void> {
-  const policy = await policyInForce($, at)
-  if (policy === null) {
+export async function isReviewedHere($: Engine, at: Place, cfg: Config, loop: Loop): Promise<boolean> {
+  return (loop.review.status === 'pass' || loop.review.status === 'fail') && (await coverageNow($, at, cfg, loop, loop.tree)) !== 'not'
+}
+
+/**
+ * Starts the round a stop calls for, under the rules every automatic round
+ * shares (`reviewRefusal`; `cfg` is the policy in force). A stop starts one
+ * only at a finished spec build (every feature passing on this tree, and no
+ * pass in this cycle yet), or to re-review a fix: a failed round handed its
+ * findings to the builder and the tree has moved since (rules 13, 14). An
+ * ordinary stop, and an edit after a pass, start none (rule 15).
+ */
+export async function maybeReview($: Engine, at: Place, cfg: Config, loop: Loop): Promise<void> {
+  const { passing, total, onTree } = featureCounts(loop)
+  const isBuilt = loop.phase === 'build' && total > 0 && passing === total && onTree === total && loop.review.status === 'none' && loop.review.cycle.ended !== 'pass'
+  const isFix = loop.review.isLooping && loop.review.status !== 'pass' && loop.tree !== null && loop.tree !== loop.review.tree
+  if (!isBuilt && !isFix) {
     return
   }
-  const cfg = policy.cfg
-  const { passing, total, onTree } = featureCounts(loop)
-  const isAllowed = cfg.autoReview && loop.review.status !== 'running' && !loop.review.isStalled && loop.review.round < cfg.maxReviewRounds
-  // A finished build of some risk starts the first round.
-  const isFirst = loop.phase === 'build' && total > 0 && passing === total && onTree === total && atLeast(tierFor(loop, cfg), 'medium') && loop.review.status === 'none'
-  // A review loop that has begun goes on by itself, in every phase, once the builder's fix moved the tree (11a).
-  // A verdict carried to this tree (only task state changed since) needs no new round; whether it carries is decided from the diff (final round, D2 F1).
-  const isNext = loop.review.isLooping && loop.review.status !== 'pass' && loop.tree !== null && loop.tree !== loop.review.tree && (await coverageNow($, at, cfg, loop, loop.tree)) === 'not'
-  if (isAllowed && (isFirst || isNext)) {
+  if (reviewRefusal(loop, cfg, await isReviewedHere($, at, cfg, loop)) === null) {
     await startReview($, at, true)
   }
 }
@@ -554,7 +621,8 @@ export async function resolveFinding($: Engine, at: Place, id: string, text: str
   const next = await save($, at.root, before => {
     const findings = before.findings.map(each => (each.id === one.id ? { ...each, status: 'resolved' as const, note: text } : each))
     const isClear = !findings.some(each => each.status === 'open' && each.isBlocking)
-    const review = isClear && before.review.status === 'fail' ? { ...before.review, status: 'pass' as const } : before.review
+    // Nothing blocking left: the round passes, and its cycle ends with a pass (rule 5).
+    const review = isClear && before.review.status === 'fail' ? { ...before.review, status: 'pass' as const, cycle: { ...before.review.cycle, ended: 'pass' as const } } : before.review
 
     return note({ ...before, findings, review }, 'review', `${one.id} resolved by a person: ${text.slice(0, 80)}`, now)
   })

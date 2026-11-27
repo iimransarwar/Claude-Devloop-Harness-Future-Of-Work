@@ -5,7 +5,7 @@
 // facts and keep what these return.
 
 import type { Question } from '../types'
-import type { Config } from './config'
+import type { Config, Step } from './config'
 import { digest } from './output'
 
 // ---------------------------------------------------------------- deltas
@@ -120,10 +120,18 @@ export function deltas(sources: readonly Source[], before: Emitted, budgetTokens
 
 /** The policy facts the builder needs, moved out of the system-prompt section so it stays the same for a thread. */
 export function policyFacts(cfg: Config, mode: 'enforce' | 'observe'): string {
-  const fast = cfg.verify.filter(one => one.profile === 'fast').map(one => `\`${one.run}\``)
-  const full = cfg.verify.filter(one => one.profile === 'full').map(one => `\`${one.run}\``)
+  const named = (steps: readonly Step[]): string[] => steps.map(one => `\`${one.run}\``)
+  const foreground = cfg.verify.filter(one => one.background !== true)
+  const fast = named(foreground.filter(one => one.profile === 'fast'))
+  const full = named(foreground.filter(one => one.profile === 'full'))
+  const background = named(cfg.verify.filter(one => one.background === true))
   const parts = [
-    fast.length > 0 ? `when you stop after changing files the harness runs ${fast.join(', ')}; run them yourself first.` : 'no verify commands are set in devloop.json: say so in your report.',
+    fast.length > 0
+      ? `when you stop after changing files the harness runs ${fast.join(', ')}; run them yourself first.`
+      : background.length > 0 ? '' : 'no verify commands are set in devloop.json: say so in your report.',
+    background.length > 0
+      ? `${background.join(', ')} run${background.length === 1 ? 's' : ''} in the background after your stops, with no time limit; only shipping waits for ${background.length === 1 ? 'it' : 'them'}.`
+      : '',
     full.length > 0 ? `Before anything ships it also runs ${full.join(', ')}.` : '',
     cfg.network !== null ? `Shell commands reach only these hosts: ${cfg.network.allow.join(', ') || 'none'} (and loopback).` : '',
     mode === 'observe' ? 'The guards are in observe mode: they record what they would refuse.' : '',

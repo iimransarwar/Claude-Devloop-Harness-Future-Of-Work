@@ -159,7 +159,7 @@ describe('F2: a pipe in the problem never demotes a real finding', () => {
     await reviewable($, w)
     await devloop($, 'review')
     await answer($, 'agent-1', 'F1 | high | src/charge.ts:3 | return Math.floor(cents) | returns number | NaN for strings | a test\nVERDICT: FAIL')
-    expect(await devloop($, 'status')).toMatch(/\[ \] Independent review: round 1 of 3 found problems: F1 open/)
+    expect(await devloop($, 'status')).toMatch(/\[ \] Independent review: round 1 of 2 found problems: F1 open/)
     expect((await bash($, 'git push -u origin feature')).deny).toMatch(/gate is not green/)
   })
 })

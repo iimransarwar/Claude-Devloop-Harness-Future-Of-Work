@@ -152,7 +152,7 @@ describe('F7: a round with a promoted checklist failure writes evidence that say
     const w = world(on)
     w.changed = ['src/a.ts']
     w.store['loop:/repo'] = {
-      shape: 'loop-12',
+      shape: 'loop-13',
       value: {
         ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't0', changed: ['src/a.ts'], tier: 'medium', size: { files: 1, lines: 3 },
         verify: { ...FRESH.verify, status: 'pass', tree: 't0', profile: 'full', passedOn: { 'npm test': 't0' } },
@@ -178,7 +178,7 @@ async function reviewing($: Dollar, w: World, asked: string[]): Promise<{ id: st
   w.tree = 't1'
   await edit($, '/repo/src/a.ts')
   await stop($)
-  expect(await devloop($, 'review')).toMatch(/round 1 of 3 started/)
+  expect(await devloop($, 'review')).toMatch(/round 1 of 2 started/)
   asked.length = 0
 
   return { id: w.spawned[w.spawned.length - 1]?.agentId ?? '', diff: `/data/devloop/repos/${digest('/repo')}/review-1.diff` }

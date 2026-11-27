@@ -402,7 +402,7 @@ describe('D1 6. the harness writes portable evidence for the reviewed tree', () 
     const w = world(on)
     w.changed = ['src/a.ts']
     w.store['loop:/repo'] = {
-      shape: 'loop-12',
+      shape: 'loop-13',
       value: {
         ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't0', changed: ['src/a.ts'], tier: 'medium', size: { files: 1, lines: 3 },
         verify: { ...FRESH.verify, status: 'pass', tree: 't0', profile: 'full', passedOn: { 'npm test': 't0' } },
@@ -427,7 +427,7 @@ describe('D1 6. the harness writes portable evidence for the reviewed tree', () 
     w.outputs['note-write'] = 'tree:ffffffffff\n'
     w.exits['note-write'] = 4
     w.store['loop:/repo'] = {
-      shape: 'loop-12',
+      shape: 'loop-13',
       value: {
         ...FRESH, root: '/repo', sessionId: 'earlier', tree: 't0', changed: ['src/a.ts'], tier: 'medium', size: { files: 1, lines: 3 },
         verify: { ...FRESH.verify, status: 'pass', tree: 't0', profile: 'full', passedOn: { 'npm test': 't0' } },

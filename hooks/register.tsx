@@ -41,10 +41,12 @@ import type { Hits, Papercut, PapercutClose } from './ledger'
 import { syncRegressions } from './regress'
 import { auditLine, clip } from './records'
 import type { Actor, AuditEvent } from './records'
-import { approvalsFor, approvers, featureCounts, gate, isShippable, tierFor } from './gate'
+import { abandonBackground, startBackground } from './background'
+import { approvalsFor, approvers, featureCounts, gate, isShippable, reviewRefusal, tierFor } from './gate'
+import { backgroundNotice } from './testruns'
 import { digest, infraAdvice } from './output'
 import { formatFinding } from './findings'
-import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewerChecks } from './review'
+import { closeShippedReview, finishReview, isReviewedHere, isReviewerAgent, maybeReview, reviewerChecks, startReview } from './review'
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
@@ -79,6 +81,7 @@ import type { TestEdit } from './weaken'
 const PANE = 'devloop'
 const FEATURE_CHECK = 'mcp__devloop__feature_check'
 const STATUS = 'mcp__devloop__devloop_status'
+const REVIEW = 'mcp__devloop__devloop_review'
 const BLOCKED = 'mcp__devloop__devloop_blocked'
 const HANDOFF = 'mcp__devloop__devloop_handoff'
 const QUESTION = 'mcp__devloop__devloop_question'
@@ -120,6 +123,13 @@ export const TOOL_SPECS = [
       type: 'object',
       properties: { detail: { type: 'boolean', description: 'Add the cache meter and the context-cost estimate' } },
     },
+    isDeferred: true,
+  },
+  {
+    name: 'devloop_review',
+    description:
+      'Asks for an independent review round on the change as it stands. Call it once, when the whole change is done, not after each step. The harness starts a separate read-only reviewer in a fresh context when the change has some risk, its tree is not yet reviewed, rounds are left and none is running, and answers in one line; it runs and waits on no tests. Do not edit files until the verdict arrives.',
+    inputSchema: { type: 'object', properties: {} },
     isDeferred: true,
   },
   {
@@ -281,6 +291,10 @@ async function wake($: Engine): Promise<Place> {
   }
   const sessionId = await $.session.id().catch(() => null)
   const { isReload } = await restore($, at.root, sessionId)
+  // A background run the stored loop names went with the last session or the module: it starts again at the next stop.
+  await abandonBackground($, at).catch((error: unknown) => {
+    $.ui.log(`devloop: the last session's background runs could not be cleared: ${String(error)}`, { to: 'debug' })
+  })
   await abandonStale($, at.root)
   const found = await snapshotInForce($, at)
   if (found === null) {
@@ -316,6 +330,18 @@ async function wake($: Engine): Promise<Place> {
   await resumeFollowups($, at, cfg).catch(() => undefined)
 
   return at
+}
+
+/**
+ * What every stop that ends the turn does: start the background checks
+ * that have no result on the tree (rule 3), never waiting on one. A failure
+ * to start them is logged, never a held stop. `isIdle` says, when a run
+ * ends, whether the main loop has no turn going (rule 2).
+ */
+async function atTurnEnd($: Engine, at: Place, cfg: Config, tree: string | null, isIdle: () => boolean): Promise<void> {
+  await startBackground($, at, cfg, tree, isIdle).catch((error: unknown) => {
+    $.ui.log(`devloop: the background checks could not be started: ${String(error)}`, { to: 'debug' })
+  })
 }
 
 /** Sets `isOverBudget` once the session's estimated cost passes the cap. */
@@ -900,6 +926,8 @@ async function buildClaims($: Engine, at: Place, loop: Loop): Promise<{ claims: 
 export const register: Register = on => {
   /** The main loop's turn in progress, so exemptions bind to it and end with it. */
   let turnId: string | null = null
+  /** Whether the main loop has no turn going: a background failure may wake it then (rule 2). */
+  const isIdle = (): boolean => turnId === null
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -1035,6 +1063,8 @@ export const register: Register = on => {
     sources.push({ key: 'policy', label: 'policy', priority: 1, text: policyFacts(cfg, modeInForce(at) === 'observe' ? 'observe' : 'enforce') })
     // The checks that apply to the files this change touched (DESIGN 4.16, decision 6).
     sources.push({ key: 'checks', label: 'checks for what you changed', priority: 1, text: checksForChange(cfg, loop.changed) })
+    // What the background checks did on this tree since the agent last heard (rule 2): running, passed, failed or unable to run.
+    sources.push({ key: 'tests', label: 'background tests', priority: 1, text: backgroundNotice(loop, cfg, now) })
     if (!live.thread.isBriefed && isOpen) {
       // A session that starts cold on an open change: told once (DESIGN 4.7), and marked told only once it is sent (F10).
       sources.push({ key: 'briefing', label: 'cold-start briefing', priority: 1, text: briefing(await briefFacts($, at, loop)), isEphemeral: true })
@@ -1050,6 +1080,8 @@ export const register: Register = on => {
     const base = loop.phase === 'spec' ? (await snapshot($, at, cfg).catch(() => null))?.base ?? null : null
     sources.push({ key: 'checklists', label: 'checklist candidates', priority: 2, text: loop.phase === 'spec' ? await candidateContext($, at, loop, base).catch(() => null) : null })
     const toFix = loop.findings.filter(one => one.status === 'open' && one.isBlocking && one.route === 'fix')
+    // The review cycle's one summary (spec §5): sent once as a delta; relay it to the person.
+    sources.push({ key: 'review-summary', label: 'review summary to pass on to the person', priority: 2, text: loop.review.cycle.summary })
     sources.push({ key: 'findings', label: 'open findings for you', priority: 2, text: toFix.length > 0 ? toFix.map(one => `${one.id} ${one.file}:${one.line} ${one.problem.slice(0, 120)}`).join('\n') : null })
     const note = await pressureCheck($, cfg, usage)
     sources.push({ key: 'pressure', label: 'context', priority: 0, text: note, isEphemeral: true })
@@ -1080,11 +1112,18 @@ export const register: Register = on => {
 
   // A /clear ends the thread: the next prompt starts a new one, briefed again.
   on('session.end', async ($, e, next) => {
+    const at = await locate($).catch(() => null)
+    // A background run ends with the session (a /clear included, which starts no session.start): it is
+    // dropped before the engine ends its child, so it is never recorded as killed, and starts again at the next stop.
+    if (at !== null && at.isOptedIn) {
+      await abandonBackground($, at).catch((error: unknown) => {
+        $.ui.log(`devloop: the background runs could not be dropped at the session's end: ${String(error)}`, { to: 'debug' })
+      })
+    }
     // The session ends: the polling of follow-ups stops; their record stays for a later session (D2).
     if (e.reason !== 'clear') {
       stopFollowTimer()
       // Its seat's claims are released only where another seat waits for them; the rest lapse with their lease (final round, D2 F4).
-      const at = await locate($).catch(() => null)
       if (at !== null && at.isOptedIn) {
         await releaseAtSessionEnd($, at).catch(() => 0)
       }
@@ -1734,6 +1773,40 @@ export const register: Register = on => {
     }
   }).catch(() => ({ result: 'devloop: the status could not be read.' }))
 
+  // The agent declares the change ready (rule 13): a round starts on the tree
+  // as it stands, under the rules every automatic round shares, and runs and
+  // waits on no tests. A reviewer never starts one.
+  on('tool.run', { tool: REVIEW }, async ($, e) => {
+    const at = await locate($)
+    const found = at.isOptedIn ? await snapshotInForce($, at) : null
+    if (found === null) {
+      return { result: 'This repository has not opted in to devloop (no devloop.json), so there is no review.' }
+    }
+    if (isReviewerAgent(await loopOf($), e.agentId)) {
+      return { result: 'A reviewer cannot start a review round.' }
+    }
+    // Only the main agent declares its change ready (rule 13): a subagent, an eval's included, cannot start a round.
+    if (e.agentId !== undefined) {
+      return { result: 'Only the main agent asks for a review, once the whole change is done.' }
+    }
+    // The tree as it stands, as /devloop review takes it: an edit since the last stop is in the round.
+    const { snap, policy } = found
+    const cfg = policy.cfg
+    const loop = await save($, at.root, before => withSnapshot(before, snap, cfg))
+    const refused = reviewRefusal(loop, cfg, await isReviewedHere($, at, cfg, loop))
+    if (refused !== null) {
+      return { result: refused }
+    }
+    // The loop limit refuses it with the limit's own message; a reviewer that cannot start says so.
+    const started = await startReview($, at, true)
+
+    return { result: (await loopOf($)).review.status === 'running' ? `${started} Do not edit files until its verdict arrives: a verdict on a tree that has changed is discarded.` : started }
+  }).catch(($, _e, next) => {
+    $.ui.log(`devloop: devloop_review failed: ${String(next.error)}`, { to: 'debug' })
+
+    return { result: 'devloop: the review round could not be started.' }
+  })
+
   // A clean way to stop: the builder says what blocks it, the person hears it,
   // and the stop gate lets the turn end.
   on('tool.run', { tool: BLOCKED }, async ($, e) => {
@@ -1860,6 +1933,7 @@ export const register: Register = on => {
     const cfg = ((await policyInForce($, at, snap)) ?? first).cfg
     // The loop limit (DESIGN 4.16): at the limit the turn may end, once, with its message added; nothing more is handed back.
     const limited = async (result: typeof below): Promise<typeof below> => {
+      await atTurnEnd($, at, cfg, snap.tree, isIdle)
       await notePassing($, at, snap).catch(() => undefined)
       const told = await reachLimit($, at, cfg, snap.branch)
 
@@ -1870,7 +1944,7 @@ export const register: Register = on => {
       const refreshed = await refresh($, at, cfg)
       // With no checks to run, a review loop that has begun still goes on (11a).
       if (loop.blocked === null) {
-        await maybeReview($, at, refreshed.loop)
+        await maybeReview($, at, cfg, refreshed.loop)
       }
 
       return limited(below)
@@ -1885,14 +1959,23 @@ export const register: Register = on => {
         await save($, at.root, before => note({ ...before, verify: { ...before.verify, blockedTree: null } }, 'verify', 'stopped with nothing changed since the last blocked stop: fix loop ended', now))
         $.ui.toast(`devloop: the agent stopped again with nothing changed since the last blocked stop; verification still fails (${loop.verify.failed ?? ''}). This needs you.`, { timeoutMs: 12_000 })
       }
+      // A tree verified before this stop (by the ship gate, say) whose checks passed or could not run: a fix to re-review still is (rule 14).
+      if (loop.verify.status === 'pass' || loop.verify.infra !== null) {
+        await maybeReview($, at, cfg, await loopOf($))
+      }
 
       return limited(below)
     }
-    const { loop: after, ran, isRepeat } = await verifyNow($, at, cfg, 'fast')
+    // A stop waits briefly: past stopTimeoutSec the check is left alone (no block) and the person is told to run it in the background.
+    const stopLimit = Math.min(cfg.verifyTimeoutSec, cfg.stopTimeoutSec)
+    const { loop: after, ran, isRepeat } = await verifyNow($, at, cfg, 'fast', stopLimit)
     // A check that could not run at all is no failure of the work: no block, no fix round; the person is told what to do.
     if (ran.infra !== null && ran.failed !== null) {
-      const advice = infraAdvice(ran.failed, ran.infra, cfg.verifyTimeoutSec)
+      const advice = infraAdvice(ran.failed, ran.infra, stopLimit)
       $.ui.toast(`devloop: ${advice}`, { timeoutMs: 15_000 })
+      // A round never waits on tests: a fix to re-review is, though they could not run (rule 14).
+      await maybeReview($, at, cfg, after)
+      await atTurnEnd($, at, cfg, snap.tree, isIdle)
 
       return { ...below, additionalContext: [...(below.additionalContext ?? []), `devloop: verification could not run, so the stop is not blocked and no fix round is spent. ${advice}`] }
     }
@@ -1918,12 +2001,14 @@ export const register: Register = on => {
       }
     }
     if (failure === null) {
-      await maybeReview($, at, await loopOf($))
+      await maybeReview($, at, cfg, await loopOf($))
 
       return limited(below)
     }
     // While a spec is written its tests are expected to fail: the result is recorded, nothing is blocked.
     if (after.phase === 'spec') {
+      await atTurnEnd($, at, cfg, snap.tree, isIdle)
+
       return below
     }
     // The same check failed twice in a row the same way: the harness writes the lesson itself (DESIGN 4.17, decision 1).
@@ -2213,7 +2298,9 @@ export const register: Register = on => {
     const loop = await loopOf($)
     const at = await look($)
     const policy = heldPolicy(at)
-    const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)))
+    // The time, so a background run says how long it has gone; a clock that cannot be read names no time.
+    const now = await $.clock.now().catch(() => undefined)
+    const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)), now)
     if (parts === null) {
       return next(e)
     }

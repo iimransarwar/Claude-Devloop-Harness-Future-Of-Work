@@ -14,7 +14,7 @@ describe('settings model', () => {
     expect(row('mode').current).toBe('observe')
     expect(row('approvals').current).toBe('two')
     expect(row('grounding').current).toBe('same')
-    expect(row('learning').current).toBe('trial')
+    expect(row('learning').current).toBe('off')
     expect(row('tests').current).toBe('npm test')
   })
   test('approvals: {0,1,1} is me, {0,1,2} two, anything else custom', () => {
@@ -142,11 +142,11 @@ describe('settings popup', () => {
   })
   test('reopening after save shows the saved value', async ($, on) => {
     const w = world(on); await start($); await devloop($, 'settings')
-    let ui = await $.ui.mount(MOUNT); await ui.select({ key: 'row-learning', value: 'off' }); await ui.press({ key: 'save' })
+    let ui = await $.ui.mount(MOUNT); await ui.select({ key: 'row-learning', value: 'propose' }); await ui.press({ key: 'save' })
     await devloop($, 'settings'); await ui.unmount(); ui = await $.ui.mount(MOUNT)
-    expect(await ui.find({ key: 'row-learning' })).toMatchObject({ props: { value: 'off' } })
+    expect(await ui.find({ key: 'row-learning' })).toMatchObject({ props: { value: 'propose' } })
     expect(await ui.find({ text: /• Learn from mistakes/ })).toBeUndefined()
-    expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').learning.auto).toBe('off')
+    expect(JSON.parse(w.files['/repo/devloop.json'] ?? '{}').learning.auto).toBe('propose')
   })
   test('cancel after a pick writes nothing and drops the draft', async ($, on) => {
     const w = world(on); await start($); const before = w.files['/repo/devloop.json']
@@ -254,7 +254,7 @@ describe('settings popup', () => {
   test('cache-guard Install asks its own confirmation and runs --all', async ($, on) => {
     const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Install it'; await start($); await devloop($, 'settings')
     const ui = await $.ui.mount(MOUNT); await ui.press({ key: 'cache-install' })
-    expect(w.cacheInstalls).toEqual([['install', '--all']])
+    expect(w.cacheInstalls).toEqual([['install', '--all', '--keepwarm']])
   })
   test('cache-guard Install declined changes nothing', async ($, on) => {
     const w = world(on); w.pythonVersion = '3.12'; w.answer = 'Leave it'; await start($); await devloop($, 'settings')

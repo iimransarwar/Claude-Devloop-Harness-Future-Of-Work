@@ -22,7 +22,8 @@ export const UNCHECKED = 'This answer was given without checking anything'
 
 /** The mode in force: the policy's `grounding.mode`, or, left out, the policy's own mode. */
 export function groundingMode(cfg: Config): GroundingMode {
-  return cfg.grounding.mode ?? cfg.mode
+  // A hint by default, never a refused stop: refusing costs a whole turn. Set "enforce" to refuse once.
+  return cfg.grounding.mode ?? (cfg.mode === 'enforce' ? 'observe' : cfg.mode)
 }
 
 /** The words that open a question, after any greeting. */

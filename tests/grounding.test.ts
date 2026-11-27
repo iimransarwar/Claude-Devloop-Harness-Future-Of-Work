@@ -120,7 +120,9 @@ describe('the backstop (decision 4), pure', () => {
   test('the policy field, read strictly; left out, the mode follows the policy\'s own', () => {
     const cfg = (raw: object) => parseConfig(JSON.stringify(raw))
     expect(groundingMode(cfg({ mode: 'observe' }).cfg)).toBe('observe')
-    expect(groundingMode(cfg({ mode: 'enforce' }).cfg)).toBe('enforce')
+    // A hint by default even in enforce mode: refusing a stop costs a turn, so it is opt-in.
+    expect(groundingMode(cfg({ mode: 'enforce' }).cfg)).toBe('observe')
+    expect(groundingMode(cfg({ mode: 'enforce', grounding: { mode: 'enforce' } }).cfg)).toBe('enforce')
     expect(groundingMode(cfg({ mode: 'enforce', grounding: { mode: 'off' } }).cfg)).toBe('off')
     expect(cfg({ grounding: { mode: 'observe', fresh: 'tree', also: ['^status'], never: ['^why'] } }).cfg.grounding).toEqual({ mode: 'observe', fresh: 'tree', also: ['^status'], never: ['^why'] })
     const bad = cfg({ grounding: { mode: 'loud', fresh: 'week', also: ['('], never: 'x', extra: 1 } })
@@ -191,7 +193,7 @@ async function settled($: Dollar, w: World): Promise<void> {
 
 describe('the backstop through the module (decision 4)', () => {
   test('enforce: a question with no look is refused once; the second stop passes and is reported (a toast, the audit trail, the ledger, the Activity tab, the counts)', async ($, on) => {
-    const w = world(on)
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce' } })
     await settled($, w)
     const contexts = w.contexts.length
     await ask($, OWNER, 'q1')
@@ -230,7 +232,7 @@ describe('the backstop through the module (decision 4)', () => {
   })
 
   test('a question followed by a look is not refused, and a hedged answer after a look is left alone', async ($, on) => {
-    const w = world(on)
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce' } })
     await settled($, w)
     await ask($, OWNER, 'q1')
     expect((await read($)).deny).toBeUndefined()
@@ -240,7 +242,7 @@ describe('the backstop through the module (decision 4)', () => {
   })
 
   test('a look by an agent the turn started counts; a call the guards refused does not', async ($, on) => {
-    const w = world(on)
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce' } })
     await settled($, w)
     await ask($, 'is the .env set?', 'q1')
     expect((await $.tool.call({ tool: 'Read', file_path: '/repo/.env' })).deny).toMatch(/secrets/)
@@ -251,7 +253,7 @@ describe('the backstop through the module (decision 4)', () => {
   })
 
   test('a request that is not a question is never touched, and a turn that changed the tree is the ordinary gate\'s', async ($, on) => {
-    const w = world(on)
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce' } })
     await settled($, w)
     const contexts = w.contexts.length
     await ask($, 'add a queue for the support team', 'r1')
@@ -264,7 +266,7 @@ describe('the backstop through the module (decision 4)', () => {
   })
 
   test('fresh "tree": an earlier look counts on the same tree, and not once the tree changed; "turn" counts this turn only', async ($, on) => {
-    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { fresh: 'tree' } })
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce', fresh: 'tree' } })
     await settled($, w)
     await ask($, 'show me a.ts', 'l1')
     await read($)
@@ -280,7 +282,7 @@ describe('the backstop through the module (decision 4)', () => {
   })
 
   test('fresh "turn" (the default): an earlier turn\'s look on the same tree does not count', async ($, on) => {
-    const w = world(on)
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce' } })
     await settled($, w)
     await ask($, 'show me a.ts', 'l1')
     await read($)
@@ -290,7 +292,7 @@ describe('the backstop through the module (decision 4)', () => {
   })
 
   test('a keep-warm turn and a subagent\'s stop are untouched, and so is a stop while a review round runs', async ($, on) => {
-    const w = world(on)
+    const w = world(on, { verify: ['npm test'], mode: 'enforce', grounding: { mode: 'enforce' } })
     await settled($, w)
     await ask($, 'Is it deployed?', 'q1')
     // A subagent's stop in that turn: nothing.

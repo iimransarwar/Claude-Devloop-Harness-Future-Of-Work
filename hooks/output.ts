@@ -1,6 +1,8 @@
 // What a check printed, made useful: the part the model reads, and a
 // fingerprint that stays the same when only noise changed. Pure: no `$`.
 
+import type { Outcome } from '../types'
+
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g
 
 const stripAnsi = (text: string): string => text.replace(ANSI, '')
@@ -85,12 +87,8 @@ export const digest = (text: string): string => hash(text)
 export const fingerprint = (command: string, output: string): string =>
   hash(`${command}\n${normalizeOutput(output)}`)
 
-/**
- * How a check ended. `not-found`, `timeout` and `killed` are infrastructure
- * outcomes: the check could not run, so no code change fixes it and no fix
- * round is spent on it.
- */
-export type Outcome = 'pass' | 'fail' | 'not-found' | 'timeout' | 'killed'
+// How a check ended is part of the loop's record, so the contract defines it.
+export type { Outcome }
 
 /**
  * Classifies a finished check by its exit code alone (as `bash -c` reports
@@ -119,12 +117,15 @@ export function classify(code: number, _output = ''): Outcome {
 }
 
 /** What to do about a check that could not run, by how it ended. */
-export function infraAdvice(command: string, outcome: Outcome, timeoutSec: number): string {
+export function infraAdvice(command: string, outcome: Outcome, timeoutSec: number, isBackground = false): string {
   switch (outcome) {
     case 'not-found':
       return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`
     case 'timeout':
-      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json or make the check faster; no code change to the work fixes this.`
+      if (isBackground) {
+        return `\`${command}\` stopped before it finished (exit 124: its own time limit, not devloop's). Check the command's own timeout; no code change to the work fixes this.`
+      }
+      return `\`${command}\` did not finish within ${timeoutSec}s, so devloop stopped waiting. Mark it "background": true in devloop.json: it then runs without holding anyone up, with no time limit. No code change to the work fixes this.`
     case 'killed':
       return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`
     default:

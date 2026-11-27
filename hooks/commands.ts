@@ -138,9 +138,9 @@ export const NOT_GIT_STATUS = 'Not a git repository: devloop only sees files Cla
 
 const NOT_SET_UP = 'devloop is not set up in this repository. A person sets it up by typing /devloop.'
 
-/** A verify check as a person reads it. */
-const describeStep = (one: Step): string =>
-  `${one.run} [${one.profile}${one.when === null ? '' : `, when ${one.when.join(' ')}`}]`
+/** A verify check as a person reads it: its command, then `[fast]`, `[full]` or `[background]`, and its `when` globs. */
+export const describeStep = (one: Step): string =>
+  `${one.run} [${one.background === true ? 'background' : one.profile}${one.when === null ? '' : `, when ${one.when.join(' ')}`}]`
 
 /**
  * Where the change stands and what the gate still needs: what /devloop status

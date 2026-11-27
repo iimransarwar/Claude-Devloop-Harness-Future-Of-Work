@@ -35,6 +35,7 @@ var BUILTIN_RULE_IDS = [
 var DEFAULTS = {
   verify: [],
   verifyTimeoutSec: 300,
+  stopTimeoutSec: 60,
   protected: [
     "devloop.json",
     "REVIEW.md",
@@ -83,11 +84,12 @@ var DEFAULTS = {
   network: null,
   mode: "enforce",
   maxFixRounds: 2,
-  maxReviewRounds: 3,
+  maxReviewRounds: 2,
   autoReview: true,
   budgetUsd: null,
   instructionMaxLines: 200,
   defaultBranch: "main",
+  fastReview: { maxFiles: 3, maxLines: 60, model: "sonnet" },
   blastRadius: {
     maxFiles: 25,
     maxLines: 600,
@@ -113,7 +115,7 @@ var DEFAULTS = {
   grounding: { mode: null, fresh: "turn", also: [], never: [] },
   loop: { failedRounds: 6 },
   testing: { scope: "targeted" },
-  learning: { auto: "trial", repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
+  learning: { auto: "off", repeats: 3, promoteHits: 3, maxTrial: 20, maxRuns: 3 },
   library: { save: "auto" }
 };
 var BUILTIN_SECRETS = [
@@ -154,13 +156,14 @@ var CHECK_ENV_BASE = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG"
 var isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var isStrings = (v) => Array.isArray(v) && v.every((one) => typeof one === "string");
 var unknownKeys = (raw, known, at) => Object.keys(raw).filter((key) => !known.includes(key)).map((key) => `${at}${key}: unknown field`);
-function whole(raw, key, fallback, max, errors) {
+function whole(raw, key, fallback, max, errors, overMax) {
   const v = raw[key];
   if (v === undefined) {
     return fallback;
   }
   if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > max) {
-    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}`);
+    const why = overMax !== undefined && typeof v === "number" && Number.isFinite(v) && v > max ? `. ${overMax}` : "";
+    errors.push(`${key}: expected a number from 0 to ${max}; using ${fallback}${why}`);
     return fallback;
   }
   return Math.floor(v);
@@ -184,7 +187,7 @@ function step(v, at, errors) {
     errors.push(`${at}: expected a command, or { "run": "<command>", "profile"?, "when"? }; left out`);
     return null;
   }
-  errors.push(...unknownKeys(v, ["run", "profile", "when"], `${at}.`));
+  errors.push(...unknownKeys(v, ["run", "profile", "when", "background"], `${at}.`));
   let profile = "fast";
   if (v.profile === "full") {
     profile = "full";
@@ -196,6 +199,12 @@ function step(v, at, errors) {
     when = v.when;
   } else if (v.when !== undefined) {
     errors.push(`${at}.when: expected a non-empty list of globs; the check runs on every change`);
+  }
+  if (v.background === true) {
+    return { run: v.run, profile, when, background: true };
+  }
+  if (v.background !== undefined && v.background !== false) {
+    errors.push(`${at}.background: expected true or false; it runs in the foreground`);
   }
   return { run: v.run, profile, when };
 }
@@ -251,6 +260,26 @@ function blastRadius(v, errors) {
     manifests: strings(v, "manifests", fallback.manifests, sub)
   };
   errors.push(...sub.map((error) => `blastRadius.${error}`));
+  return out;
+}
+function fastReview(v, errors) {
+  const fallback = DEFAULTS.fastReview;
+  if (v === undefined) {
+    return fallback;
+  }
+  if (!isObject(v)) {
+    errors.push('fastReview: expected { "maxFiles", "maxLines", "model" }; using the default');
+    return fallback;
+  }
+  errors.push(...unknownKeys(v, ["maxFiles", "maxLines", "model"], "fastReview."));
+  const sub = [];
+  const model = v.model === undefined ? fallback.model : v.model === null || typeof v.model === "string" && v.model.trim() !== "" ? v.model : (sub.push("model: expected a model name or null; using the default"), fallback.model);
+  const out = {
+    maxFiles: whole(v, "maxFiles", fallback.maxFiles, 1e5, sub),
+    maxLines: whole(v, "maxLines", fallback.maxLines, 1e7, sub),
+    model
+  };
+  errors.push(...sub.map((error) => `fastReview.${error}`));
   return out;
 }
 function approvals(v, errors) {
@@ -655,7 +684,8 @@ function parseConfig(text) {
   }
   const cfg = {
     verify,
-    verifyTimeoutSec: whole(raw, "verifyTimeoutSec", DEFAULTS.verifyTimeoutSec, 600, errors),
+    verifyTimeoutSec: whole(raw, "verifyTimeoutSec", DEFAULTS.verifyTimeoutSec, 600, errors, 'Mark long checks "background": true in verify: they run with no time limit, and only shipping waits for them'),
+    stopTimeoutSec: whole(raw, "stopTimeoutSec", DEFAULTS.stopTimeoutSec, 600, errors),
     protected: strings(raw, "protected", DEFAULTS.protected, errors),
     tests: strings(raw, "tests", DEFAULTS.tests, errors),
     secrets: strings(raw, "secrets", DEFAULTS.secrets, errors),
@@ -672,6 +702,7 @@ function parseConfig(text) {
     instructionMaxLines: whole(raw, "instructionMaxLines", DEFAULTS.instructionMaxLines, 1e4, errors),
     defaultBranch,
     blastRadius: blastRadius(raw.blastRadius, errors),
+    fastReview: fastReview(raw.fastReview, errors),
     approvals: approvals(raw.approvals, errors),
     reviewers: reviewers(raw.reviewers, errors),
     models: models(raw.models, errors),
@@ -720,8 +751,22 @@ var FRESH = {
   hasTouchedTests: false,
   tier: "none",
   size: { files: 0, lines: 0 },
-  verify: { status: "none", rounds: 0, failed: null, at: 0, tree: null, profile: "none", fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null },
-  review: { status: "none", round: 0, agentId: null, isAuto: false, summary: null, at: 0, tree: null, agents: [], stalled: 0, isStalled: false, isLooping: false },
+  verify: { status: "none", rounds: 0, failed: null, at: 0, tree: null, profile: "none", fingerprint: null, passedOn: {}, covered: {}, blockedTree: null, infra: null, runs: {} },
+  background: {},
+  review: {
+    status: "none",
+    round: 0,
+    agentId: null,
+    isAuto: false,
+    summary: null,
+    at: 0,
+    tree: null,
+    agents: [],
+    stalled: 0,
+    isStalled: false,
+    isLooping: false,
+    cycle: { from: 1, ended: null, summary: null, discarded: 0, settledTree: null, toldTree: null, followUp: null }
+  },
   findings: [],
   allow: [],
   refusals: { rule: "", count: 0 },
@@ -4271,9 +4316,11 @@ function lintCheck(run) {
   return [...new Set(found)];
 }
 var lintChecks = (steps) => steps.flatMap((one) => lintCheck(one.run).map((problem) => `\`${one.run}\`: ${problem}`));
+var isApplying = (step, changed) => step.when === null || changed.some((file) => matchesAny(file, step.when ?? []));
 function stepsFor(steps, profile, changed) {
-  return steps.filter((one) => (profile === "full" || one.profile === "fast") && (one.when === null || changed.some((file) => matchesAny(file, one.when ?? []))));
+  return steps.filter((one) => one.background !== true && (profile === "full" || one.profile === "fast") && isApplying(one, changed));
 }
+var backgroundFor = (steps, changed) => steps.filter((one) => one.background === true && isApplying(one, changed));
 
 // hooks/contentrules.ts
 function addedLines(before, after) {
@@ -4345,6 +4392,94 @@ function contentReason(hit, path) {
 // hooks/findings.ts
 var openBlocking = (findings, reviewer) => findings.filter((one) => one.status === "open" && one.isBlocking && (reviewer === undefined || one.reviewer === reviewer));
 
+// hooks/output.ts
+var ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
+var stripAnsi = (text) => text.replace(ANSI, "");
+function tail(text, lines = 40, chars = 4000) {
+  const kept = text.trimEnd().split(`
+`).slice(-lines).join(`
+`);
+  return kept.length > chars ? `…${kept.slice(-chars)}` : kept;
+}
+var ERROR = /\berror\b|\bFAIL(ED)?\b|Error:|panicked|Traceback/i;
+var RUNTIME_FRAME = /^\s*at\s.*(?:\(node:|\bnode:internal\/)|^\s*at node:|^\s*File "<frozen [^>]*>"|^\s*(?:async\s+)?[\w$.<>[\]]+(?:\s\[as [\w$]+\])?\s\(node:[^)]*\)\s*$|^\s*(?:async\s+)?node:internal\//;
+function distill(text, errorLines = 12, tailLines = 30, chars = 4000) {
+  const lines = stripAnsi(text).trimEnd().split(`
+`).filter((line) => !RUNTIME_FRAME.test(line));
+  const from = Math.max(0, lines.length - tailLines);
+  const errors = lines.slice(0, from).filter((line) => ERROR.test(line)).slice(0, errorLines);
+  const end = tail(lines.slice(from).join(`
+`), tailLines, errors.length > 0 ? Math.floor(chars / 2) : chars);
+  if (errors.length === 0) {
+    return end;
+  }
+  const head = errors.join(`
+`);
+  return `${head.length > chars / 2 ? `${head.slice(0, chars / 2)}…` : head}
+…
+${end}`;
+}
+function hash(text) {
+  let a = 3735928559;
+  let b = 1103547991;
+  for (let i = 0;i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 2654435761);
+    b = Math.imul(b ^ c, 1597334677);
+  }
+  a = Math.imul(a ^ a >>> 16, 2246822507) ^ Math.imul(b ^ b >>> 13, 3266489909);
+  b = Math.imul(b ^ b >>> 16, 2246822507) ^ Math.imul(a ^ a >>> 13, 3266489909);
+  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(16).padStart(14, "0");
+}
+var digest = (text) => hash(text);
+function classify(code, _output = "") {
+  if (code === 0) {
+    return "pass";
+  }
+  if (code === 127 || code === 126) {
+    return "not-found";
+  }
+  if (code === 124 || code < 0) {
+    return "timeout";
+  }
+  if ([130, 134, 137, 143].includes(code)) {
+    return "killed";
+  }
+  return "fail";
+}
+function infraAdvice(command, outcome, timeoutSec, isBackground = false) {
+  switch (outcome) {
+    case "not-found":
+      return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`;
+    case "timeout":
+      if (isBackground) {
+        return `\`${command}\` stopped before it finished (exit 124: its own time limit, not devloop's). Check the command's own timeout; no code change to the work fixes this.`;
+      }
+      return `\`${command}\` did not finish within ${timeoutSec}s, so devloop stopped waiting. Mark it "background": true in devloop.json: it then runs without holding anyone up, with no time limit. No code change to the work fixes this.`;
+    case "killed":
+      return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`;
+    default:
+      return "";
+  }
+}
+
+// hooks/testruns.ts
+function ago(ms) {
+  const minutes = Math.floor(Math.max(0, ms) / 60000);
+  if (minutes < 1) {
+    return "<1m";
+  }
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+function runningOn(loop, run) {
+  const one = loop.background?.[run];
+  return one !== undefined && loop.tree !== null && one.tree === loop.tree ? one : null;
+}
+function recordOn(loop, run) {
+  const one = loop.verify.runs?.[run];
+  return one !== undefined && loop.tree !== null && one.tree === loop.tree && !one.isOlderTree ? one : null;
+}
+
 // hooks/gate.ts
 var ORDER = ["none", "low", "medium", "high"];
 var raise = (tier) => tier === "none" ? "none" : ORDER[Math.min(ORDER.length - 1, ORDER.indexOf(tier) + 1)] ?? "high";
@@ -4396,7 +4531,7 @@ var NO_FACTS = { errors: [], lint: [], policy: "same" };
 var short = (tree) => (tree ?? "none").slice(0, 8);
 var list = (items, cap = 5) => `${items.slice(0, cap).join(", ")}${items.length > cap ? ", …" : ""}`;
 var specialistsFor = (loop, cfg) => cfg.reviewers.filter((one) => loop.changed.some((file) => one.when.some((glob) => matches(file, glob))));
-function verificationRow(loop, cfg, tier) {
+function verificationRow(loop, cfg, tier, facts) {
   const label = "Verification";
   if (loop.verify.status === "error") {
     return { label, isMet: false, note: `the harness could not verify (${loop.verify.failed ?? "unknown error"}); /devloop verify retries` };
@@ -4407,7 +4542,12 @@ function verificationRow(loop, cfg, tier) {
   if (cfg.verify.length === 0) {
     return { label, isMet: tier === "low", note: "no verify commands in devloop.json: nothing proves the work" };
   }
-  const steps = stepsFor(cfg.verify, "full", loop.changed);
+  const foreground = stepsFor(cfg.verify, "full", loop.changed);
+  const background = facts.isStateless === true ? [] : backgroundFor(cfg.verify, loop.changed);
+  const steps = [...foreground, ...background];
+  if (loop.tree === null && background.length > 0) {
+    return { label, isMet: false, note: `background checks need a git repository to record a result against: ${list(background.map((one) => one.run))}` };
+  }
   const isMoved = loop.isDirty && loop.verify.status === "pass";
   const pending = steps.filter((one) => isMoved || loop.tree === null || loop.verify.passedOn[one.run] !== loop.tree);
   const isOnTree = loop.verify.tree === loop.tree && !isMoved;
@@ -4416,7 +4556,7 @@ function verificationRow(loop, cfg, tier) {
   }
   if (loop.tree === null) {
     const hasPassed = loop.verify.status === "pass" && !loop.isDirty;
-    const needsFull = steps.some((one) => one.profile === "full");
+    const needsFull = foreground.some((one) => one.profile === "full");
     const isMet = hasPassed && (loop.verify.profile === "full" || !needsFull);
     return {
       label,
@@ -4424,11 +4564,36 @@ function verificationRow(loop, cfg, tier) {
       note: isMet ? needsFull ? "fast and full checks pass" : "passes" : hasPassed ? "fast checks pass; the full checks run when the change ships" : "not run since the last edit"
     };
   }
+  const hasFull = foreground.some((one) => one.profile === "full");
   if (pending.length === 0) {
-    return { label, isMet: true, note: steps.some((one) => one.profile === "full") ? "fast and full checks pass" : steps.length === 0 ? "no check applies to this change" : "passes" };
+    return { label, isMet: true, note: hasFull ? "fast and full checks pass" : steps.length === 0 ? "no check applies to this change" : "passes" };
   }
   const names = pending.map((one) => one.run);
-  const isFastDone = pending.every((one) => one.profile === "full");
+  const waiting = isMoved ? [] : pending.filter((one) => one.background === true).map((one) => one.run);
+  const running = waiting.flatMap((run) => {
+    const one = runningOn(loop, run);
+    return one === null ? [] : [{ run, startedAt: one.startedAt }];
+  });
+  if (running.length > 0) {
+    const since = facts.now === undefined ? "" : ` (started ${ago(facts.now - Math.min(...running.map((one) => one.startedAt)))} ago)`;
+    return { label, isMet: false, note: `tests still running${since}: ${list(running.map((one) => one.run))}` };
+  }
+  const failing = waiting.filter((run) => recordOn(loop, run)?.outcome === "fail");
+  if (failing.length > 0) {
+    return { label, isMet: false, note: `failing: ${list(failing)} (in the background)` };
+  }
+  const couldNot = waiting.flatMap((run) => {
+    const outcome = recordOn(loop, run)?.outcome;
+    return outcome === undefined || outcome === "pass" || outcome === "fail" ? [] : [`${run} (${outcome})`];
+  });
+  if (couldNot.length > 0) {
+    return { label, isMet: false, note: `could not run on this tree: ${list(couldNot)}; fix the command` };
+  }
+  if (pending.every((one) => one.background === true)) {
+    const done = foreground.length === 0 ? "" : hasFull ? "fast and full checks pass; " : "fast checks pass; ";
+    return { label, isMet: false, note: `${done}background checks still to run: ${list(names)} (they start at the next stop)` };
+  }
+  const isFastDone = pending.every((one) => one.profile === "full" || one.background === true);
   return {
     label,
     isMet: false,
@@ -4464,14 +4629,20 @@ function reviewRow(loop, cfg, name, label, rows, facts) {
     }
     return open.length === 0 ? { label, isMet: true, note: isCarried ? `passed on ${short(review.tree)}; only task state has changed since` : `passed in round ${review.round}${notes > 0 ? ` (${notes} note${notes === 1 ? "" : "s"}, nothing blocking)` : ""}` } : { label, isMet: false, note: `round ${review.round} of ${cfg.maxReviewRounds} found problems: ${open.map((one) => one.id).join(", ")} open` };
   }
+  const next = cfg.autoReview ? "a new round starts when the change is ready (the devloop_review tool, or a push)" : 'a person starts a new round with /devloop review ("autoReview" is off)';
+  const stale = `passed on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}: the review is out of date, and ${next}`;
   if (isDone) {
-    return { label, isMet: false, note: `${review.status === "pass" ? "passed" : "reviewed"} on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}` };
+    return { label, isMet: false, note: review.status === "pass" ? stale : `reviewed on tree ${short(review.tree)}, but the tree is now ${short(loop.tree)}` };
   }
   if (review.status === "running") {
     return { label, isMet: false, note: `round ${review.round} running` };
   }
-  return { label, isMet: false, note: review.round >= cfg.maxReviewRounds ? `the cap of ${cfg.maxReviewRounds} rounds is spent: a person reads the change` : "not run: /devloop review" };
+  if (isCapSpent(review, cfg)) {
+    return { label, isMet: false, note: `the cap of ${cfg.maxReviewRounds} rounds is spent: a person reads the change` };
+  }
+  return { label, isMet: false, note: review.cycle.ended === "pass" && review.tree !== null && review.tree !== loop.tree ? stale : "not run: /devloop review" };
 }
+var isCapSpent = (review, cfg) => review.round >= cfg.maxReviewRounds && review.cycle.ended !== "pass";
 function gate(loop, cfg, facts = NO_FACTS) {
   const checks = [];
   const tier = tierFor(loop, cfg);
@@ -4485,7 +4656,7 @@ function gate(loop, cfg, facts = NO_FACTS) {
   if (hiddenFromGit.length > 0) {
     checks.push({ label: "Files hidden from git", isMet: false, note: `${list(hiddenFromGit)} carr${hiddenFromGit.length === 1 ? "ies" : "y"} the skip-worktree or assume-unchanged bit, so their changes are not in the tree judged: clear it (git update-index --no-skip-worktree --no-assume-unchanged <file>)` });
   }
-  checks.push(verificationRow(loop, cfg, tier));
+  checks.push(verificationRow(loop, cfg, tier, facts));
   if (loop.phase === "spec") {
     checks.push({ label: "Spec", isMet: false, note: "awaiting a person: /devloop approve" });
   }
@@ -4603,74 +4774,6 @@ var approvalsFor = (tier, cfg) => tier === "none" ? 0 : cfg.approvals[tier];
 function approvers(tier, cfg) {
   const n = approvalsFor(tier, cfg);
   return n === 0 ? "merge once the gate is green" : n === 1 ? "one person other than the author approves and merges" : `${n === 2 ? "two" : n} people approve and merge`;
-}
-
-// hooks/output.ts
-var ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
-var stripAnsi = (text) => text.replace(ANSI, "");
-function tail(text, lines = 40, chars = 4000) {
-  const kept = text.trimEnd().split(`
-`).slice(-lines).join(`
-`);
-  return kept.length > chars ? `…${kept.slice(-chars)}` : kept;
-}
-var ERROR = /\berror\b|\bFAIL(ED)?\b|Error:|panicked|Traceback/i;
-var RUNTIME_FRAME = /^\s*at\s.*(?:\(node:|\bnode:internal\/)|^\s*at node:|^\s*File "<frozen [^>]*>"|^\s*(?:async\s+)?[\w$.<>[\]]+(?:\s\[as [\w$]+\])?\s\(node:[^)]*\)\s*$|^\s*(?:async\s+)?node:internal\//;
-function distill(text, errorLines = 12, tailLines = 30, chars = 4000) {
-  const lines = stripAnsi(text).trimEnd().split(`
-`).filter((line) => !RUNTIME_FRAME.test(line));
-  const from = Math.max(0, lines.length - tailLines);
-  const errors = lines.slice(0, from).filter((line) => ERROR.test(line)).slice(0, errorLines);
-  const end = tail(lines.slice(from).join(`
-`), tailLines, errors.length > 0 ? Math.floor(chars / 2) : chars);
-  if (errors.length === 0) {
-    return end;
-  }
-  const head = errors.join(`
-`);
-  return `${head.length > chars / 2 ? `${head.slice(0, chars / 2)}…` : head}
-…
-${end}`;
-}
-function hash(text) {
-  let a = 3735928559;
-  let b = 1103547991;
-  for (let i = 0;i < text.length; i += 1) {
-    const c = text.charCodeAt(i);
-    a = Math.imul(a ^ c, 2654435761);
-    b = Math.imul(b ^ c, 1597334677);
-  }
-  a = Math.imul(a ^ a >>> 16, 2246822507) ^ Math.imul(b ^ b >>> 13, 3266489909);
-  b = Math.imul(b ^ b >>> 16, 2246822507) ^ Math.imul(a ^ a >>> 13, 3266489909);
-  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(16).padStart(14, "0");
-}
-var digest = (text) => hash(text);
-function classify(code, _output = "") {
-  if (code === 0) {
-    return "pass";
-  }
-  if (code === 127 || code === 126) {
-    return "not-found";
-  }
-  if (code === 124 || code < 0) {
-    return "timeout";
-  }
-  if ([130, 134, 137, 143].includes(code)) {
-    return "killed";
-  }
-  return "fail";
-}
-function infraAdvice(command, outcome, timeoutSec) {
-  switch (outcome) {
-    case "not-found":
-      return `\`${command}\` could not run: its program was not found (exit 127). Install it, or fix the command in devloop.json; no code change fixes this.`;
-    case "timeout":
-      return `\`${command}\` did not finish within ${timeoutSec}s. Raise "verifyTimeoutSec" in devloop.json or make the check faster; no code change to the work fixes this.`;
-    case "killed":
-      return `\`${command}\` was killed before it finished (out of memory, or stopped by the system). Free resources or rerun it; no code change to the work fixes this.`;
-    default:
-      return "";
-  }
 }
 
 // hooks/weaken.ts
@@ -4929,7 +5032,7 @@ function pushSends(committable, sent, seen = { hidden: [], differs: [], differCo
 }
 
 // hooks/records.ts
-var HARNESS_VERSION = "0.4.0";
+var HARNESS_VERSION = "0.6.0";
 var str = (maxLength = 300) => ({ type: "string", maxLength });
 var text = (maxLength = 300) => ({ type: "string", maxLength });
 var nullableText = (maxLength = 300) => ({ type: ["string", "null"], maxLength });
@@ -5274,7 +5377,7 @@ var NUDGE = "This is a question about the state of things: check the source befo
 var REFUSAL = "You were asked a question about the state of things and answered without looking at anything in this turn. Check the source now (read the files, run the query, list the components), then answer and say what you checked. If nothing can be checked (an opinion, a general explanation), say that in one line and stop again.";
 var UNCHECKED = "This answer was given without checking anything";
 function groundingMode(cfg) {
-  return cfg.grounding.mode ?? cfg.mode;
+  return cfg.grounding.mode ?? (cfg.mode === "enforce" ? "observe" : cfg.mode);
 }
 var OPENERS = ["does", "do", "did", "is", "are", "was", "were", "has", "have", "had", "can", "could", "will", "would", "should", "what", "which", "who", "whose", "where", "when", "why", "how"];
 var CHECKING = ["confirm", "verify", "double check", "double-check", "make sure", "are you sure", "is it true", "check whether", "check if", "did you", "have you"];
@@ -5838,13 +5941,18 @@ function proofLoop(proof, cfg) {
 var reviewerOf = (label) => label === "Independent review" ? "general" : label.startsWith("Review: ") ? label.slice("Review: ".length) : null;
 function statelessGate(proof, cfg, facts) {
   const loop = proofLoop(proof, cfg);
-  const rows = gate(loop, cfg, facts).map((row) => {
+  const rows = gate(loop, cfg, { ...facts, isStateless: true }).map((row) => {
     const name = reviewerOf(row.label);
     return name === null ? row : reviewRowFrom(row.label, name, proof.note, proof.committable, policyHash(cfg), proof.isOlderNote === true);
   });
+  const skipped = backgroundFor(cfg.verify, loop.changed).map((one) => one.run);
+  if (skipped.length > 0) {
+    rows.push({ label: "Background checks", isMet: true, note: `${NOT_CHECKED_HERE}: ${skipped.join(", ")}` });
+  }
   return { loop, rows, isGreen: rows.every((row) => row.isMet) };
 }
 var checksFor = (cfg, files, isEmpty) => isEmpty ? [] : stepsFor(cfg.verify, "full", files).map((one) => one.run);
+var NOT_CHECKED_HERE = "not checked here (background): CI or the session's background run proves it";
 
 // hooks/residual.ts
 var RESIDUAL_RISKS = [
