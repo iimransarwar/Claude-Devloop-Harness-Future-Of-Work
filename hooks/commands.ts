@@ -154,7 +154,7 @@ export function statusReport(loop: Loop, cfg: Config, at: Place, snap: Snapshot,
   const size = snap.tree === null ? '' : ` (${snap.size.files} in the diff, ${snap.size.lines} lines)`
   const lines = [
     `devloop (${cfg.mode}): ${brief({ ...loop, tier })}`,
-    tier === 'none' ? (snap.tree === null ? NOT_GIT_STATUS : 'No changes yet.') : `Changed: ${loop.changed.length} file${loop.changed.length === 1 ? '' : 's'}${snap.branch !== null ? ` on ${snap.branch}` : ''}${size}`,
+    tier === 'none' ? (snap.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet.') : `Changed: ${loop.changed.length} file${loop.changed.length === 1 ? '' : 's'}${snap.branch !== null ? ` on ${snap.branch}` : ''}${size}`,
     ...rows,
     tier === 'none' ? '' : `  Merge: ${approvers(tier, cfg)}.`,
     ready.length > 0 ? `Ready to build (dependencies pass on this tree): ${ready.join(', ')}` : '',

@@ -2122,7 +2122,7 @@ export const register: Register = on => {
     } else {
       body = [
         tier !== 'none' && <Text bold>{isShippable(loop, cfg, facts) ? 'Gate: green' : 'Gate: not green'}</Text>,
-        tier === 'none' && <Text dimColor>{loop.tree === null ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
+        tier === 'none' && <Text dimColor>{loop.isOutsideGit === true ? NOT_GIT_STATUS : 'No changes yet: nothing to gate.'}</Text>,
         ...(tier === 'none' ? [] : checks.map(check => (
           <Text color={check.isMet ? undefined : 'warning'} wrap="truncate-end">
             {check.isMet ? '[x]' : '[ ]'} {check.label}: {check.note}

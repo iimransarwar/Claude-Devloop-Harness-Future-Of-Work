@@ -6330,6 +6330,9 @@ var HIDDEN_PAST_CAP = "more files with the skip-worktree or assume-unchanged bit
 function readSnapshot(stdout) {
   const lines = stdout.split(`
 `).filter((line) => line !== "");
+  if (stdout.trim() === "") {
+    return { ...NO_SNAPSHOT, isOutsideGit: true };
+  }
   if (lines.some((line) => !TAGGED.test(line))) {
     return NO_SNAPSHOT;
   }

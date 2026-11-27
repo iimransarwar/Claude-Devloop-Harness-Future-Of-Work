@@ -129,6 +129,12 @@ describe('guided setup on /devloop', () => {
     expect(said).toMatch(/Not a git repository: devloop only sees files Claude edits here\./)
     expect(said).not.toMatch(/No changes yet/)
   })
+  test('a git repository whose snapshot fails still says No changes yet, never that it is not a git repository', async ($, on) => {
+    const w = world(on); w.isSnapshotBroken = true; await start($)
+    const said = await devloop($, 'status')
+    expect(said).toMatch(/No changes yet/)
+    expect(said).not.toMatch(/Not a git repository/)
+  })
   test('Set up anyway: the summary says no push gate and promises no push review', async ($, on) => {
     const w = world(on, null); w.isGit = false; w.setupAnswers = ['Set up anyway']; await start($)
     const said = await devloop($, '')

@@ -124,6 +124,8 @@ export type World = {
   setupAnswers: string[] | null
   /** Whether the session's folder is a git work tree: false, the snapshot answers nothing and the git probe lists `gitSubfolders`. */
   isGit: boolean
+  /** The snapshot script fails (exit 1, nothing printed) in a git repository: a null tree that is not "outside git". */
+  isSnapshotBroken: boolean
   /** Direct subfolders holding a `.git`, as the git probe lists them outside a work tree. */
   gitSubfolders: string[]
   /** A path whose write fails (`disk full`); null for none. */
@@ -147,7 +149,7 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
     spawned: [], submitted: [], toasts: [], answer: 'Approve', questions: [], store: {}, onAsk: null,
     toolSpecs: [], contexts: [], usage: { tokens: undefined, window: 1 }, envs: {}, envNames: ['PATH', 'HOME'], toolList: [], appended: [], instructionFiles: [], toolResults: {},
     scriptArgs: {}, ignored: {}, capped: null, hold: null, onHeld: null, unreadable: [], toolErrors: [], hookEnv: {}, diffs: {}, committable: null, headTree: null, hidden: [], differs: [], argvs: [], isDiskListed: false,
-    setupAnswers: null, isGit: true, gitSubfolders: [], failWrite: null,
+    setupAnswers: null, isGit: true, isSnapshotBroken: false, gitSubfolders: [], failWrite: null,
   }
   on('store.get', (_, e) => ({ value: w.store[e.key] }))
   on('store.set', (_, e) => {
@@ -284,6 +286,9 @@ export function world(on: On, config: object | null = CONFIG, options: { isClock
       w.scriptArgs[tag] = args
       switch (tag) {
         case 'snapshot':
+          if (w.isSnapshotBroken) {
+            return answer('', 1)
+          }
           // Outside a work tree git answers nothing.
           if (!w.isGit) {
             return answer('')
