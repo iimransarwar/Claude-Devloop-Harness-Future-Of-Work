@@ -126,7 +126,7 @@ describe('F1: init writes no PROGRESS.md, and nothing the model reads points at 
     const w = world(on, null)
     await start($)
     const said = await devloop($, 'init')
-    expect(said).toMatch(/^Wrote /)
+    expect(said).toMatch(/^devloop is set up\.[\s\S]*devloop\.json/)
     expect(said).not.toMatch(/PROGRESS/)
     expect('/repo/PROGRESS.md' in w.files).toBe(false)
     expect(w.files['/repo/AGENTS.md']).not.toMatch(/PROGRESS/)

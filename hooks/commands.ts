@@ -33,8 +33,8 @@ import { candidateContext, checklistsCommand, selectedLists } from './checklists
 import { historyOf, taskFiles } from './evals'
 import { parseFeatures, readyFeatures, specProblems, unmappedCriteria } from './spec'
 import {
-  attributionOf, brief, bump, cacheOf, clearKept, credentialNames, factsOf, fingerprintOf, forget, git, judgeFeatureCheck, ledger, locate, tasksFactsOf, tasksProbe,
-  heldPolicy, metrics, note, policyInForce, questionsOf, record, refresh, run, save, saveCache, saveQuestions, snapshot, snapshotInForce, specDir,
+  attributionOf, brief, bump, cacheOf, clearKept, credentialNames, factsOf, fingerprintOf, git, judgeFeatureCheck, ledger, locate, tasksFactsOf, tasksProbe,
+  heldPolicy, metrics, note, policyInForce, questionsOf, record, refresh, run, save, saveCache, saveQuestions, snapshot, specDir,
   stateDirOf, stateRootOf, sweepCapped, sweepSpecsOf, verifyNow, withSnapshot, FRESH, SWEEP_CAP, loopOf,
 } from './state'
 import type { InForce, RefusedCheck } from './state'
@@ -45,7 +45,8 @@ import { isAtLimit, limitDoctor, limitOn, unscopedFull } from './limits'
 import { continueCommand } from './rounds'
 import { learningDoctor, maybePropose, rulesCommand } from './learner'
 import { libraryCommand, libraryDoctor, saveSpec } from './librarycmd'
-import { AGENTS, EVALS, FEATURES, REVIEW, configFile, spec as specFile } from './templates'
+import { setup } from './setup'
+import { FEATURES, spec as specFile } from './templates'
 
 const HELP = `/devloop                 where the change stands and what the gate still needs
 /devloop init            set this repository up for the loop
@@ -131,116 +132,7 @@ const HELP = `/devloop                 where the change stands and what the gate
 
 type Answer = CommandRunResult
 
-const NOT_SET_UP = 'This repository is not set up for the loop yet. Run /devloop init.'
-
-/** A check /devloop init proposes: a command, or one with a profile and the globs that scope it. */
-type Detected = string | { run: string; profile?: 'full'; when?: string[] }
-
-/**
- * The checks a repository's own files name: fast ones by default, end-to-end
- * suites as `full`, each with `when` globs where the layout makes them
- * obvious (DESIGN 4.16): a Go, Rust or Python suite covers that language's
- * files and its manifests.
- */
-async function detectVerify($: Engine, root: string): Promise<Detected[]> {
-  const found: Detected[] = []
-  const has = (file: string): Promise<boolean> => $.fs.exists(`${root}/${file}`)
-  if (await has('package.json')) {
-    try {
-      const scripts = ((JSON.parse(await $.fs.read(`${root}/package.json`)) as { scripts?: Record<string, string> }).scripts) ?? {}
-      for (const name of ['typecheck', 'lint', 'test']) {
-        const body = scripts[name]
-        if (body !== undefined && !body.includes('no test specified')) {
-          found.push(name === 'test' ? 'npm test --silent' : `npm run --silent ${name}`)
-        }
-      }
-      if (scripts.e2e !== undefined) {
-        found.push({ run: 'npm run --silent e2e', profile: 'full' })
-      }
-    } catch {
-      // An unreadable package.json names no checks.
-    }
-  }
-  if ((await has('pyproject.toml')) || (await has('pytest.ini'))) {
-    found.push({ run: 'pytest -q', when: ['**/*.py', 'pyproject.toml', 'pytest.ini', 'setup.cfg', 'requirements*.txt'] })
-  }
-  if (await has('go.mod')) {
-    const when = ['**/*.go', 'go.mod', 'go.sum']
-    found.push({ run: 'go vet ./...', when }, { run: 'go test ./...', when })
-  }
-  if (await has('Cargo.toml')) {
-    found.push({ run: 'cargo test --quiet', when: ['**/*.rs', 'Cargo.toml', 'Cargo.lock'] })
-  }
-
-  return found
-}
-
-const DEFAULT_BRANCH = `
-# devloop:default-branch
-remote=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null) && { echo "$remote" | sed 's#^origin/##'; exit 0; }
-for b in main master trunk develop; do
-  git rev-parse -q --verify "refs/heads/$b" >/dev/null 2>&1 && { echo "$b"; exit 0; }
-done
-git symbolic-ref --short -q HEAD 2>/dev/null
-`
-
-/** The branch changes merge into, as the repository says: the remote's HEAD, a usual name, or the one checked out. */
-async function detectBranch($: Engine, root: string): Promise<string> {
-  const ran = await $.process.run(['bash', '-c', DEFAULT_BRANCH, 'devloop'], { cwd: root, timeoutMs: 10_000 }).catch(() => null)
-  const name = (ran?.stdout ?? '').split('\n')[0]?.trim() ?? ''
-
-  return /^[\w./-]+$/.test(name) ? name : 'main'
-}
-
-async function init($: Engine, e: CommandRunInput): Promise<Answer> {
-  if (!isFromPerson(e)) {
-    return { text: 'A repository is set up for the loop by a person, from the prompt.' }
-  }
-  // A policy at or above the session's root already governs it: a second one here would shadow it.
-  forget()
-  const found = await locate($)
-  if (found.text !== null) {
-    return { text: `This repository already has a policy: ${found.root.replace(/\/$/, '')}/devloop.json. Nothing was written. /devloop doctor audits it.` }
-  }
-  if (found.isOptedIn) {
-    return { text: 'This repository\'s base branch has a devloop.json, which stays in force although the working tree\'s copy was deleted. Nothing was written: restore it from the base branch (git checkout <base> -- devloop.json) or change it there.' }
-  }
-  const root = await $.session.root().catch(() => $.session.cwd())
-  const wrote: string[] = []
-  const write = async (file: string, text: string): Promise<void> => {
-    if (!(await $.fs.exists(`${root}/${file}`))) {
-      await $.fs.write(`${root}/${file}`, text)
-      wrote.push(file)
-    }
-  }
-  const verify = await detectVerify($, root)
-  const branch = await detectBranch($, root)
-  await write('devloop.json', configFile(verify, branch))
-  if (!(await $.fs.exists(`${root}/CLAUDE.md`))) {
-    await write('AGENTS.md', AGENTS)
-  }
-  await write('REVIEW.md', REVIEW)
-  await write('evals/README.md', EVALS)
-  forget()
-  const at = await locate($)
-  // A first baseline names the tree but verifies nothing.
-  const baseline = await snapshotInForce($, at)
-  if (baseline !== null) {
-    const { snap, policy } = baseline
-    await save($, at.root, before => ({ ...withSnapshot(before, snap, policy.cfg), verify: { ...before.verify, status: 'none', tree: snap.tree, profile: 'none' } }))
-  }
-  const named = verify.map(one => (typeof one === 'string' ? one : `${one.run}${one.profile === 'full' ? ' (full)' : ''}${one.when === undefined ? '' : ` (when ${one.when.join(' ')})`}`))
-
-  return {
-    text: [
-      `Wrote ${wrote.join(', ')}.`,
-      `Default branch: ${branch} (changes are measured against it; set "defaultBranch" if that is wrong).`,
-      named.length > 0 ? `Verify commands found: ${named.join(' ; ')}` : 'No verify commands were found. Add them to devloop.json under "verify": without them nothing proves the work.',
-      'The guards start in observe mode: they record what they would refuse and refuse nothing (secret files are always refused). Set "mode": "enforce" in devloop.json once the paths look right.',
-      'Next: /devloop doctor to audit the setup, or /devloop spec <name> to start a change.',
-    ].filter(line => line !== '').join('\n'),
-  }
-}
+const NOT_SET_UP = 'devloop is not set up in this repository. A person sets it up by typing /devloop.'
 
 /** A verify check as a person reads it. */
 const describeStep = (one: Step): string =>
@@ -1202,7 +1094,7 @@ export async function command($: Engine, e: CommandRunInput, turnId: string | nu
     return { text: HELP }
   }
   if (name === 'init') {
-    return init($, e)
+    return setup($, e)
   }
   const at = await locate($)
   if (name === 'doctor') {
@@ -1222,7 +1114,8 @@ export async function command($: Engine, e: CommandRunInput, turnId: string | nu
   // Every subcommand decides by the policy in force: the base branch's, whole.
   const policy = await policyInForce($, at)
   if (policy === null) {
-    return { text: NOT_SET_UP }
+    // A person's bare /devloop (or status) leads into setup; anyone else is told who sets it up.
+    return (name === '' || name === 'status') && isFromPerson(e) ? setup($, e) : { text: NOT_SET_UP }
   }
   const cfg = policy.cfg
   switch (name === '' ? 'status' : name) {

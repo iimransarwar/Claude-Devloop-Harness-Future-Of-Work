@@ -21,7 +21,7 @@ test('a repository that has not opted in gets the secrets guard and nothing else
   expect((await edit($, '/repo/devloop.json')).deny).toBeUndefined()
   expect((await edit($, '/repo/src/auth/session.ts')).deny).toBeUndefined()
   expect((await bash($, 'git reset --hard')).deny).toBeUndefined()
-  expect(await devloop($, 'status')).toMatch(/not set up/)
+  expect(await devloop($, 'status', { kind: 'sdk' })).toMatch(/not set up/)
 })
 
 test('init writes the scaffold once, with the branch it finds, and starts in observe mode', async ($, on) => {
@@ -30,7 +30,9 @@ test('init writes the scaffold once, with the branch it finds, and starts in obs
   w.files['/repo/package.json'] = JSON.stringify({ scripts: { test: 'vitest run', typecheck: 'tsc --noEmit' } })
   await start($)
 
-  expect(await devloop($, 'init')).toMatch(/Wrote devloop.json[\s\S]*Default branch: master/)
+  const said = await devloop($, 'init')
+  expect(said).toMatch(/^devloop is set up\.[\s\S]*devloop\.json/)
+  expect(said).toMatch(/measured against master/)
   const config = JSON.parse(w.files['/repo/devloop.json'] ?? '{}') as { verify: string[]; mode: string; defaultBranch: string }
   expect(config.verify).toEqual(['npm run --silent typecheck', 'npm test --silent'])
   expect(config.mode).toBe('observe')
@@ -59,7 +61,7 @@ test('N10: init needs a person, and never shadows a policy at or above the sessi
   expect(await devloop($, 'init', { kind: 'plugin', name: 'other' })).toMatch(/set up for the loop by a person/)
   expect(await devloop($, 'init', { kind: 'sdk' })).toMatch(/set up for the loop by a person/)
   expect(repoFiles()).toEqual([])
-  expect(await devloop($, 'init')).toMatch(/Wrote devloop.json/)
+  expect(await devloop($, 'init')).toMatch(/^devloop is set up\./)
   expect(w.files['/repo/sub/devloop.json']).toBeDefined()
 })
 

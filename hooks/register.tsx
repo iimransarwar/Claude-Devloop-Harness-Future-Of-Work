@@ -48,6 +48,7 @@ import { closeShippedReview, finishReview, isReviewerAgent, maybeReview, reviewe
 import { appliesTo, EMPTY_LEARNED, isLearnerAgent, judgeLearned, learnedReason, learnedRules, repeatLesson } from './autolearn'
 import { finishProposer, learnedNow, maybePropose, noteLearnedHits, sweepLearning } from './learner'
 import { librarySpellings, searchCommand } from './librarycmd'
+import { SET_UP_HEADLINE } from './setup'
 import {
   LINK_BUDGET, WRITE_LINK_BUDGET, budgetRefusals, closesReview, followedPlaces, callKind, filteredCheck, globParts, libraryMayRead, reviewerMayRun, reviewerPlaces, harnessStateReason, instructionGlobs, isAlwaysHeld, isHarnessState, isHeldBy, isOnDefault, isReviewerCommand, isSecretPlace, judgeCommandAll, judgeWrite, liftClause, matches,
   matchesAny, maybeWrittenByReading, namedPlacesByReading, NEVER_LIFTED, place, relative, shipLookups, shipsOf, strictest, whereOf, writtenPaths, writtenPathsByReading, writesOpenPath,
@@ -896,8 +897,8 @@ export const register: Register = on => {
   on('command.run', { command: 'devloop' }, async ($, e) => {
     // An exemption granted while a turn runs belongs to that turn.
     const answer = await command($, e, turnId)
-    // The tools are already registered, the same as in any session: init changes no tool.
-    if (/^\s*init\b/.test(e.args) && /^Wrote /.test(answer.text ?? '')) {
+    // The tools are already registered, the same as in any session: setup changes no tool.
+    if (answer.text?.startsWith(SET_UP_HEADLINE) === true) {
       void $.ui.open({ id: PANE, title: 'Dev loop' })
     }
 
