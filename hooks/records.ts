@@ -64,6 +64,7 @@ export const AUDIT_ACTIONS = [
   'cache-guard-installed', 'cache-guard-removed', 'harness-state-changed', 'answer-unchecked', 'loop-limit', 'loop-continued',
   'learned-rule-promoted', 'learned-rule-dropped',
   'library-saved', 'library-save-stopped', 'library-path-set', 'library-removed',
+  'settings-changed',
 ] as const
 
 const withTag = (id: string, title: string, properties: Record<string, Schema>, required: readonly string[] = Object.keys(properties)): Schema => ({

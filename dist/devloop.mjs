@@ -4995,7 +4995,8 @@ var AUDIT_ACTIONS = [
   "library-saved",
   "library-save-stopped",
   "library-path-set",
-  "library-removed"
+  "library-removed",
+  "settings-changed"
 ];
 var withTag = (id, title, properties, required = Object.keys(properties)) => ({
   $schema: "https://json-schema.org/draft/2020-12/schema",

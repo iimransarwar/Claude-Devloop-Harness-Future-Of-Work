@@ -56,7 +56,8 @@
         "library-saved",
         "library-save-stopped",
         "library-path-set",
-        "library-removed"
+        "library-removed",
+        "settings-changed"
       ]
     },
     "actor": {
