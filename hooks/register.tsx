@@ -1080,6 +1080,8 @@ export const register: Register = on => {
     const base = loop.phase === 'spec' ? (await snapshot($, at, cfg).catch(() => null))?.base ?? null : null
     sources.push({ key: 'checklists', label: 'checklist candidates', priority: 2, text: loop.phase === 'spec' ? await candidateContext($, at, loop, base).catch(() => null) : null })
     const toFix = loop.findings.filter(one => one.status === 'open' && one.isBlocking && one.route === 'fix')
+    // The review cycle's one summary (spec §5): sent once as a delta; relay it to the person.
+    sources.push({ key: 'review-summary', label: 'review summary to pass on to the person', priority: 2, text: loop.review.cycle.summary })
     sources.push({ key: 'findings', label: 'open findings for you', priority: 2, text: toFix.length > 0 ? toFix.map(one => `${one.id} ${one.file}:${one.line} ${one.problem.slice(0, 120)}`).join('\n') : null })
     const note = await pressureCheck($, cfg, usage)
     sources.push({ key: 'pressure', label: 'context', priority: 0, text: note, isEphemeral: true })

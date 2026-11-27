@@ -12,6 +12,8 @@ import {
   unreadable, unverifiedBlocking, wouldBlock,
 } from './findings'
 import type { Answer, Parsed } from './findings'
+import { cycleSummary } from './findings'
+import { testLines } from './testruns'
 import { capText, featureCounts, isCapSpent, isStallSpent, NOTHING_TEXT, reviewRefusal, specialistsFor, STALLED_TEXT, tierFor } from './gate'
 import { FRESH } from './fresh'
 import { isSecret, relative } from './rules'
@@ -35,7 +37,8 @@ import { finishChecklist, isChecklistAgent, startChecklists } from './checklists
  * command like any other.
  */
 export async function reviewerChecks($: Engine, at: Place, cfg: Config, loop: Loop): Promise<string[]> {
-  const verify = cfg.verify.map(one => one.run)
+  // Background checks are not the reviewer's to run (rule 8): it reads their results instead.
+  const verify = cfg.verify.filter(one => one.background !== true).map(one => one.run)
   if (loop.phase !== 'build' || loop.spec === null || loop.approvedHash === null || (await specHash($, at, loop)) !== loop.approvedHash) {
     return verify
   }
@@ -184,8 +187,9 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   // The open findings of a reviewer that no longer applies go to the general reviewer for re-check.
   const names = ['general', ...specialistsFor(loop, cfg).map(one => one.name)]
   const recheckedBy = (one: Finding): string => (names.includes(one.reviewer) ? one.reviewer : 'general')
+  const tests = testLines(loop, cfg, await $.clock.now())
   const promptFor = (name: string, one: Reviewer | null): string => reviewPrompt({
-    brief: briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, round, maxRounds: cfg.maxReviewRounds,
+    brief: briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, tests, round, maxRounds: cfg.maxReviewRounds,
     open: loop.findings.filter(each => each.status === 'open' && each.route === 'fix' && recheckedBy(each) === name), nextId, delta,
   })
   const spawn = async (name: string, one: Reviewer | null): Promise<string | { deny: string }> => {
@@ -419,6 +423,12 @@ async function discardRound($: Engine, at: Place, cfg: Config, started: Loop): P
       : started.review.isLooping || started.phase === 'build'
         ? 'The next stop starts a fresh round.'
         : 'A fresh round starts when the change is ready again: the devloop_review tool, or a push.'
+  if (isLast) {
+    // The cycle ends at the cap: its summary comes first, the discard notice last (C3).
+    const told = cycleSummary({ ended: 'cap', round, cap: cfg.maxReviewRounds, discarded: started.review.cycle.discarded + 1, from: started.review.cycle.from, findings: started.findings, tests: testLines(started, cfg, now) })
+    await save($, at.root, before => ({ ...before, review: { ...before.review, cycle: { ...before.review.cycle, summary: told } } }))
+    $.ui.toast(`devloop: ${told}`, { timeoutMs: 15_000 })
+  }
   $.ui.toast(`devloop: a review verdict arrived for a tree that has since changed; it was discarded and counts as round ${round} of ${cfg.maxReviewRounds}. ${next}`)
 }
 
@@ -486,6 +496,12 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
       cycle: { ...before.review.cycle, ended: ended ?? before.review.cycle.ended, settledTree: before.review.tree },
     },
   }, 'review', isPassing ? `review passed in round ${round}` : `review round ${round} found problems`, now))
+  // The one summary a person reads when the cycle ends (spec §5): toast, Activity, and the agent's next prompt.
+  const cycleText = ended === null ? null : cycleSummary({ ended, round, cap: cfg.maxReviewRounds, discarded: loop.review.cycle.discarded, from: loop.review.cycle.from, findings, tests: testLines(loop, cfg, now) })
+  if (cycleText !== null) {
+    await save($, at.root, before => note({ ...before, review: { ...before.review, cycle: { ...before.review.cycle, summary: cycleText } } }, 'review', cycleText.split('\n')[0] ?? 'review done', now))
+    $.ui.toast(`devloop: ${cycleText}`, { timeoutMs: 15_000 })
+  }
   await bump($, at.root, 'review-rounds')
   await meterCost($, at.root, { kind: 'review-end' })
   for (const one of findings.filter(each => each.round === round || each.seen === round)) {
@@ -510,7 +526,9 @@ async function settle($: Engine, at: Place, cfg: Config, loop: Loop, snap: Snaps
     if (round === 1) {
       await bump($, at.root, 'review-first-pass')
     }
-    $.ui.toast(`devloop: review passed in round ${round}${settled.deferred.length + settled.demoted.length > 0 ? ' (with notes; /devloop findings lists them)' : ''}`)
+    if (cycleText === null) {
+      $.ui.toast(`devloop: review passed in round ${round}${settled.deferred.length + settled.demoted.length > 0 ? ' (with notes; /devloop findings lists them)' : ''}`)
+    }
     // The newest commit for which the gate was fully met (decision 4).
     await notePassing($, at, snap).catch(() => undefined)
 

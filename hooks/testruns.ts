@@ -111,3 +111,26 @@ export function backgroundNotice(loop: Loop, cfg: Config, now: number): string |
 
   return said.length === 0 ? null : said.join('\n')
 }
+
+/**
+ * One line per check as it stands on the loop's tree, for the reviewer's
+ * "Tests on this tree" block and the review summary (spec §4, §5).
+ */
+export function testLines(loop: Loop, cfg: Config, now: number): string[] {
+  return testStates(loop, cfg).map(one => {
+    const tag = one.isBackground ? ' [background]' : ''
+    const took = one.durationMs !== null ? `, ${ago(one.durationMs)}` : ''
+    switch (one.state) {
+      case 'pass':
+        return `✓ passed: ${one.run}${tag}${took}`
+      case 'fail':
+        return `✗ failing: ${one.run}${tag}${one.lines !== '' ? `\n    ${one.lines.split('\n').slice(0, 5).join('\n    ')}` : ''}`
+      case 'could not run':
+        return `! could not run: ${one.run}${tag}`
+      case 'running':
+        return `running: ${one.run}${tag} (started ${ago(now - (one.startedAt ?? now))} ago)`
+      default:
+        return `not run on this tree: ${one.run}${tag}`
+    }
+  })
+}
