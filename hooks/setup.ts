@@ -4,6 +4,7 @@
 
 import type { CommandRunInput, CommandRunResult } from 'claude-code'
 
+import { reasonOf } from './actions'
 import { cacheGuardState, installCacheGuard } from './cachecmd'
 import { isFromPerson } from './journal'
 import { forget, locate, save, snapshotInForce, withSnapshot } from './state'
@@ -14,7 +15,7 @@ import { AGENTS, EVALS, REVIEW, configFile } from './templates'
 export type Detected = string | { run: string; profile?: 'full'; when?: string[] }
 export type Strictness = 'observe' | 'enforce'
 export type Approvers = 'me' | 'two'
-export type SetupAnswers = { mode: Strictness; verify: Detected[]; isVerifyLater: boolean; approvers: Approvers }
+export type SetupAnswers = { mode: Strictness; verify: Detected[]; approvers: Approvers }
 
 export const SET_UP_HEADLINE = 'devloop is set up.'
 
@@ -67,7 +68,7 @@ export const readVerify = (answer: string, found: readonly Detected[]): { verify
 }
 
 const PURPOSE: Record<string, string> = {
-  'devloop.json': 'your settings (commit it to main: devloop reads it from there)',
+  'devloop.json': 'your settings',
   'REVIEW.md': 'what the reviewer looks for',
   'AGENTS.md': 'notes every Claude session reads',
   'evals/README.md': 'where regression tasks go',
@@ -78,12 +79,20 @@ export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonl
     a.mode === 'observe'
       ? 'Watch only: it notes what it would have blocked, and blocks nothing (it always blocks reading secret files).'
       : 'Block from the start: it refuses what its rules forbid.'
-  const checks =
-    a.verify.length > 0
-      ? `Each time Claude stops after changing files, it runs: ${a.verify.map(runOf).join(' ; ')}`
-      : 'Each time Claude stops after changing files, nothing will be checked until you add a command under "verify" in devloop.json, e.g. "verify": ["npm test"].'
+  const isFull = (d: Detected): boolean => typeof d !== 'string' && d.profile === 'full'
+  const fast = a.verify.filter((d) => !isFull(d)).map(named)
+  const full = a.verify.filter(isFull).map(runOf)
+  const checks = [
+    ...(fast.length > 0 ? [`Each time Claude stops after changing files, it runs: ${fast.join(' ; ')}`] : []),
+    ...(full.length > 0 ? [`Before anything ships, it also runs: ${full.join(' ; ')}`] : []),
+  ]
+  if (checks.length === 0) {
+    checks.push('Each time Claude stops after changing files, nothing will be checked until you add a command under "verify" in devloop.json, e.g. "verify": ["npm test"].')
+  }
   const approvers = a.approvers === 'me' ? 'Risky merges need your approval (just you).' : 'Risky merges need two people to approve.'
-  const files = wrote.map((f) => `  ${f.padEnd(18)}${PURPOSE[f] ?? ''}`.trimEnd())
+  const purpose = (f: string): string =>
+    f === 'devloop.json' && options.isOutsideGit !== true ? `your settings (commit it to ${branch.name}: devloop reads it from there)` : (PURPOSE[f] ?? '')
+  const files = wrote.map((f) => `  ${f.padEnd(18)}${purpose(f)}`.trimEnd())
   const base = branch.isGuessed
     ? `Changes are measured against ${branch.name} (guessed: set "defaultBranch" in devloop.json if that is wrong).`
     : `Changes are measured against ${branch.name}.`
@@ -93,7 +102,7 @@ export const summary = (a: SetupAnswers, wrote: readonly string[], kept: readonl
     '',
     'What it will do here',
     `  - ${mode}`,
-    `  - ${checks}`,
+    ...checks.map((line) => `  - ${line}`),
     ...(options.isOutsideGit === true ? [] : ['  - Before anything is pushed, a second agent reviews the change.']),
     `  - ${approvers}`,
     '',
@@ -204,7 +213,7 @@ const INTRO =
 const STRICT_QUESTION = 'Watch only notes what devloop would have blocked and blocks nothing; Block from the start refuses what its rules forbid. How strict should it be to start?'
 const APPROVERS_QUESTION = 'A risky change needs a person to approve it before it merges; with Two people, someone working alone can never clear one. Who approves risky merges?'
 const OUTSIDE_GIT_QUESTION = `${NOT_GIT} It would only see files Claude edits: no diffs, no credential scan, no push gate. Set it up anyway?`
-const CACHE_QUESTION = 'cache-guard (bundled, needs Python) shows a status line with how warm your prompt cache is and warns before a cold cache costs you. Everything adds its status line, trimming of long command output, notices and a lean output style; normal replies keeps your replies as they are. Install it?'
+export const CACHE_QUESTION = 'cache-guard (bundled, needs Python) shows how warm your prompt cache is and warns before a cold cache costs you. Installing edits your ~/.claude/settings.json (all projects): it replaces your status line with its own (a backup is kept) and adds hooks. Everything adds cache-expiry notices and makes the Lean (short replies) output style the default; normal replies adds only the notices. Install it?'
 const JUST_ME = { low: 0, medium: 1, high: 1 }
 
 /** A detected check in full, as a person reads it: its profile and the globs that scope it. */
@@ -231,13 +240,9 @@ async function askRead<T>($: Engine, question: string, options: readonly string[
   return again === null ? null : read(again)
 }
 
-/** A failed call's reason, as a person reads it: without the engine's `<plugin>: $.<call>:` lead or a closing period. */
-const messageOf = (error: unknown): string =>
-  (error instanceof Error ? error.message : String(error)).replace(/^\S+: \$\.[\w.]+: /, '').replace(/\.$/, '')
-
 /**
  * The guided setup (`/devloop init`, and `/devloop` from a person where no
- * policy governs): checks that the folder is a git repository, asks three
+ * policy governs): checks that the folder is a git repository, asks its
  * questions, and writes the scaffold with the answers, never over a file that
  * is there. A dismissed question writes nothing.
  */
@@ -289,7 +294,7 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
   if (tests === null) {
     return { text: CANCELLED }
   }
-  const { verify, isLater } = readVerify(tests, detected)
+  const { verify } = readVerify(tests, detected)
   const approvers = await askRead($, APPROVERS_QUESTION, OPTIONS.approvers, readApprovers)
   if (approvers === null) {
     return { text: CANCELLED }
@@ -320,7 +325,7 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
       // What was written stands (a devloop.json now governs): the next read must see it.
       forget()
 
-      return { text: `Could not write ${file}: ${messageOf(error)}. Already written: ${wrote.length > 0 ? wrote.join(', ') : 'nothing'}.` }
+      return { text: `Could not write ${file}: ${reasonOf(error)}. Already written: ${wrote.length > 0 ? wrote.join(', ') : 'nothing'}. ${wrote.includes('devloop.json') ? 'Delete devloop.json and type /devloop to try again.' : 'Type /devloop to try again.'}` }
     }
     wrote.push(file)
   }
@@ -348,5 +353,5 @@ export async function setup($: Engine, e: CommandRunInput): Promise<CommandRunRe
       : `cache-guard: could not be installed (${reason}). /devloop cache install tries again.`
   }
   // Outside git the person chose this: the summary says, under its first line, what devloop cannot see.
-  return { text: summary({ mode, verify, isVerifyLater: isLater, approvers }, wrote, kept, branch, { isOutsideGit: !git.isGit, cacheLine }) }
+  return { text: summary({ mode, verify, approvers }, wrote, kept, branch, { isOutsideGit: !git.isGit, cacheLine }) }
 }

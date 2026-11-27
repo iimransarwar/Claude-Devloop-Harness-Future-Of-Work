@@ -44,9 +44,13 @@ export const ACTIONS: readonly Action[] = [
   { name: 'verify', description: 'Run the fast and full verify checks now' },
 ]
 
+/** A failed call's reason, as a person reads it: without the engine's `<plugin>: $.<call>:` lead or a closing period. */
+export const reasonOf = (error: unknown): string =>
+  (error instanceof Error ? error.message : String(error)).replace(/^(?:\w*Error: )?\S+: \$\.[\w.]+: /, '').replace(/\.$/, '')
+
 /** What a person reads when a /devloop command throws or overruns: the real error, not the engine's generic line. */
 export function failureText(args: string, error: { kind: 'throw' | 'timeout'; message?: string } | undefined): string {
-  const reason = error?.kind === 'timeout' ? 'took too long' : (error?.message ?? 'unknown error')
+  const reason = error?.kind === 'timeout' ? 'took too long' : (error?.message === undefined ? 'unknown error' : reasonOf(error.message))
 
   return `devloop: ${`/devloop ${args}`.trim()} failed: ${reason}. If it keeps happening, start Claude with --debug and share the log.`
 }

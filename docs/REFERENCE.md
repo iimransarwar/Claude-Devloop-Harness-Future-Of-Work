@@ -20,7 +20,7 @@ A repository opts in by having a `devloop.json` at its root, in the working
 tree or on the base branch: deleting the working copy does not switch devloop
 off while the base branch has one (the base's stays in force, and the gate
 says the file was deleted). Without either, devloop only refuses reads and
-writes of secret files and offers `/devloop init`.
+writes of secret files and offers setup: type `/devloop`.
 
 ## Install
 
@@ -39,8 +39,8 @@ Then restart Claude Code so the hooks load. The README covers installing from
 the terminal, at project scope for a team, from a local clone, and
 updating.
 
-Then, in the repository you want to work on, type `/devloop` (or `/devloop
-init`, which runs the same setup) and then `/devloop doctor`.
+Then, in the repository you want to work on, type `/devloop` (or
+`/devloop init`, which runs the same setup) and then `/devloop doctor`.
 
 Setup asks a few questions, each with a recommended answer that Enter takes.
 Dismissing any of them cancels and writes nothing.
@@ -684,11 +684,11 @@ every session, and deferred behind tool search.
 
 ## Commands
 
-Every action below is also a slash command of its own, `/devloop-<action>`
-(32 in all), so it shows in the `/` menu. In a repository that is not set up
-only `doctor`, `cache`, `library` and `help` appear beside `/devloop`. Typing
-any `/devloop` command opens the Dev loop panel, including in VS Code's
-narrow Claude panel, and a command that fails shows the real error.
+Every action below, except `/devloop` itself (status) and `init`, is also a
+slash command of its own, `/devloop-<action>` (32 in all), so it shows in the `/` menu. In a repository that is not set up
+only `doctor`, `cache`, `library` and `help` appear beside `/devloop`. When a
+person types any `/devloop` command in a repository that is set up, it opens
+the Dev loop panel, including in VS Code's narrow Claude panel, and a command that fails shows the real error.
 
 | Command | What it does |
 | --- | --- |
@@ -1042,7 +1042,7 @@ A task counts only once its witness holds; `expect` asserts on the tool calls
 the harness saw the eval agent make (`"refusal": "<rule>"` instead of
 `noRefusal` says which guard must fire). Checks run with `checkEnv`. Agent or
 sandbox failures and checks that could not run are reported apart and left out
-of pass rates. `evals/README.md` (written by `/devloop init`) says how to
+of pass rates. `evals/README.md` (written by setup, `/devloop`) says how to
 compose the suite.
 
 ### Records and the audit trail

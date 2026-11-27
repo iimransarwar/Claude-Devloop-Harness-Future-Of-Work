@@ -32,6 +32,14 @@ test('a menu entry runs the same action with its arguments', async ($, on) => {
   world(on); await start($)
   expect((await $.command.run({ command: 'devloop-help', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toBe(HELP)
 })
+test('a menu entry passes its arguments through', async ($, on) => {
+  world(on); await start($)
+  const run = (command: string, args: string) => $.command.run({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect((await run('devloop-audit', '5')).text).toBe((await run('devloop', 'audit 5')).text)
+})
+test('failureText strips the engine lead from a message', () => {
+  expect(failureText('x', { kind: 'throw', message: 'devloop: $.fs.exists: disk unavailable.' })).toMatch(/failed: disk unavailable\. If/)
+})
 test('a person-only action through its entry is refused for the agent as /devloop is', async ($, on) => {
   world(on); await start($)
   const run = (command: string, args: string) => $.command.run({ command, args, origin: { kind: 'sdk' }, presentation: { isFullscreen: false, columns: 80 } })
@@ -44,7 +52,7 @@ test('failureText names the command and the error, or took too long', () => {
 })
 test('a throwing /devloop shows the real error, not the engine line', async ($, on) => {
   const w = world(on, null); w.failing['fs.exists'] = 'disk unavailable'; await start($)
-  expect(await devloop($, 'init')).toMatch(/^devloop: \/devloop init failed: .*disk unavailable/)
+  expect(await devloop($, 'init')).toMatch(/^devloop: \/devloop init failed: disk unavailable\. If it keeps/)
 })
 test('a person typing /devloop in a set-up repo opens the panel', async ($, on) => {
   const w = world(on); await start($); w.opened.length = 0
@@ -61,6 +69,12 @@ test('the agent running /devloop does not open the panel', async ($, on) => {
   await devloop($, '', { kind: 'sdk' })
   expect(w.opened).not.toContain('devloop')
 })
+test('a ui.open that throws leaves the command answer unchanged', async ($, on) => {
+  const w = world(on); await start($)
+  const before = await devloop($, 'help')
+  w.failOpen = true
+  expect(await devloop($, 'help')).toBe(before)
+})
 test('a person in a repo not set up does not get the panel from doctor', async ($, on) => {
   const w = world(on, null); await start($); w.opened.length = 0
   await devloop($, 'doctor')
@@ -69,5 +83,5 @@ test('a person in a repo not set up does not get the panel from doctor', async (
 test('a menu entry whose command throws shows the readable failure (doctor reaches fs.exists)', async ($, on) => {
   const w = world(on, null); w.failing['fs.exists'] = 'disk unavailable'; await start($)
   const r = await $.command.run({ command: 'devloop-doctor', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
-  expect(r.text).toMatch(/^devloop: \/devloop doctor failed: .*disk unavailable/)
+  expect(r.text).toMatch(/^devloop: \/devloop doctor failed: disk unavailable\. If it keeps/)
 })

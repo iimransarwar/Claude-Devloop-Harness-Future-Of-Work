@@ -5,7 +5,7 @@
 // spec a person approves, a reviewer with a fresh context, risk tiers that
 // decide who may ship, and a ledger that turns repeated failures into rules.
 // A repository opts in with a devloop.json at its root; without one only the
-// secrets guard and /devloop init are live.
+// secrets guard and /devloop (which sets it up) are live.
 
 import type { Register, RenderChildren, SessionUsage, ToolCallResult, TurnUsage } from 'claude-code'
 
@@ -237,7 +237,7 @@ async function openForPerson($: Engine, e: Parameters<typeof isFromPerson>[0]): 
   }
   const at = await locate($).catch(() => null)
   if (at !== null && at.isOptedIn) {
-    await Promise.resolve($.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
+    void Promise.resolve().then(() => $.ui.open({ id: PANE, title: 'Dev loop' })).catch(() => undefined)
   }
 }
 
@@ -920,7 +920,7 @@ export const register: Register = on => {
     await openForPerson($, e)
 
     return answer
-  }).catch(($, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
+  }).catch((_, e, next) => ({ text: failureText(e.args.trim(), next.error) }))
 
   // One entry per action in the `/` menu: the same handler, the action put in front of the arguments.
   for (const a of ACTIONS) {
@@ -930,7 +930,7 @@ export const register: Register = on => {
 
       return answer
     })
-      .catch(($, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
+      .catch((_, e, next) => ({ text: failureText(`${a.name} ${e.args}`.trim(), next.error) }))
   }
 
   // The rules, said once per thread; the guards below are what holds them.

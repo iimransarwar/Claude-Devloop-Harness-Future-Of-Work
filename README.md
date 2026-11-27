@@ -144,7 +144,7 @@ secrets guard and the setup are live.
    `"mode": "enforce"`. In observe mode devloop only records what it would
    have stopped. Reading a secret file is refused in either mode.
 
-If the folder is not a git repository, setup names a git folder inside it
+If the folder is not a git repository, setup names the git repository inside it
 when there is one and writes nothing. Otherwise it asks whether to cancel or
 set up anyway.
 
@@ -166,8 +166,8 @@ Just ask the agent for what you want. devloop works in the background.
 | `/devloop doctor` | Check the setup. |
 | `/devloop help` | Every command. |
 
-Every action is also in the `/` menu as `/devloop-<action>`. Typing any
-`/devloop` command opens the Dev loop panel, including in VS Code's narrow
+Every action is also in the `/` menu as `/devloop-<action>`. When a person types
+any `/devloop` command in a repository that is set up, it opens the Dev loop panel, including in VS Code's narrow
 Claude panel. If a command fails, it shows the real error.
 
 The agent may push a branch and open a pull request. Merging is yours.

@@ -1,11 +1,11 @@
-// The files /devloop init and /devloop spec write, and the words the plugin
+// The files setup (typing /devloop) and /devloop spec write, and the words the plugin
 // puts in front of the model.
 
 import type { Phase } from '../types'
 import type { Strictness } from './setup'
 
 /**
- * The devloop.json /devloop init writes: only what a person is likely to
+ * The devloop.json setup writes: only what a person is likely to
  * edit. Every other field has a default, listed in the README.
  */
 export const configFile = (verify: readonly (string | { run: string; profile?: 'full'; when?: string[] })[], defaultBranch: string, options: { mode?: Strictness; approvals?: { low: number; medium: number; high: number } } = {}): string =>
