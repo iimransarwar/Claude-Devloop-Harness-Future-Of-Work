@@ -615,8 +615,8 @@ export function reviewPrompt(facts: PromptFacts): string {
       : 'The harness could not write the diff; read the changed files listed below directly.',
     `Risk tier: ${facts.tier}. At this tier these severities block: ${blocking}.`,
     `Changed files (${facts.changed.length}): ${facts.changed.slice(0, 60).join(', ')}${facts.changed.length > 60 ? ', …' : ''}`,
-    facts.checks.length > 0 ? `Checks you may run, exactly as written:\n${facts.checks.map(one => `  ${one}`).join('\n')}` : 'There are no checks to run.',
-    ...(facts.tests === undefined ? [] : [facts.tests.length > 0 ? `Tests on this tree (from the harness; you cannot run background checks, read their results here):\n${facts.tests.map(one => `  ${one}`).join('\n')}` : 'Tests on this tree: none set.']),
+    'You run nothing: the harness ran the checks, and their results are below. Judge from the diff, the code and these results.',
+    ...(facts.tests === undefined ? [] : [facts.tests.length > 0 ? `Tests on this tree (from the harness):\n${facts.tests.map(one => `  ${one}`).join('\n')}` : 'Tests on this tree: none set.']),
     `This is round ${facts.round} of ${facts.maxRounds}.`,
     facts.open.length > 0
       ? `Open findings to re-check, each by its id:\n${facts.open.map(formatFinding).join('\n')}`

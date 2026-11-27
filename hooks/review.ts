@@ -187,7 +187,9 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   // The open findings of a reviewer that no longer applies go to the general reviewer for re-check.
   const names = ['general', ...specialistsFor(loop, cfg).map(one => one.name)]
   const recheckedBy = (one: Finding): string => (names.includes(one.reviewer) ? one.reviewer : 'general')
-  const tests = testLines(loop, cfg, await $.clock.now())
+  // The reviewer runs nothing (it has no shell): it reads the checks' and the features' results here.
+  const features = Object.entries(loop.features).map(([id, one]) => (one.passes && one.tree === loop.tree ? `✓ feature ${id} passes on this tree` : `✗ feature ${id} not passing on this tree`))
+  const tests = [...testLines(loop, cfg, await $.clock.now()), ...features]
   const promptFor = (name: string, one: Reviewer | null): string => reviewPrompt({
     brief: briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, tests, round, maxRounds: cfg.maxReviewRounds,
     open: loop.findings.filter(each => each.status === 'open' && each.route === 'fix' && recheckedBy(each) === name), nextId, delta,
