@@ -100,7 +100,7 @@ var DEFAULTS = {
   reviewers: [],
   models: { reviewer: null, specialist: null, eval: null, learner: null },
   cache: { missTokens: 20000, ttlMinutes: 5 },
-  context: { budgetTokens: 600, warnRemaining: null, saveRemaining: null, debounceCalls: 25, idleWarnTokens: 50000 },
+  context: { budgetTokens: 600, warnRemaining: null, saveRemaining: null, debounceCalls: 200, idleWarnTokens: 50000 },
   instructionsIgnore: [],
   instructionMaxBytes: 32 * 1024,
   checkEnv: { pass: [], mode: "observe" },
@@ -4700,7 +4700,7 @@ function gate(loop, cfg, facts = NO_FACTS) {
     checks.push({
       label: "No credentials in the diff",
       isMet: isOutside ? !atLeast(tier, "medium") : isScanned && hits.length === 0,
-      note: isOutside ? "not scanned: this is not a git repository, so there is no diff to scan" : !isScanned ? "not scanned on this tree yet: the scan runs with verification" : hits.length === 0 ? "no key or token shapes in the added lines" : `${list(hits.map((one) => `${one.file}:${one.line} (${one.kind})`))}: remove it and rotate it; the value is not shown`
+      note: isOutside ? "not scanned: this is not a git repository, so there is no diff to scan" : !isScanned ? "not scanned on this tree yet: the scan runs with verification" : hits.length === 0 ? "no key or token shapes in the added lines" : hits.every((one) => one.kind === "API key or secret assignment") ? `${list(hits.map((one) => `${one.file}:${one.line} (${one.kind})`))}: a secret-named value that looks random; if it is a real credential, remove it and rotate it (the value is not shown)` : `${list(hits.map((one) => `${one.file}:${one.line} (${one.kind})`))}: remove it and rotate it; the value is not shown`
     });
   }
   if (loop.changed.some((file) => matchesAny(file, cfg.tests))) {
@@ -5038,7 +5038,7 @@ function pushSends(committable, sent, seen = { hidden: [], differs: [], differCo
 }
 
 // hooks/records.ts
-var HARNESS_VERSION = "0.7.2";
+var HARNESS_VERSION = "0.8.0";
 var str = (maxLength = 300) => ({ type: "string", maxLength });
 var text = (maxLength = 300) => ({ type: "string", maxLength });
 var nullableText = (maxLength = 300) => ({ type: ["string", "null"], maxLength });
@@ -5396,8 +5396,16 @@ var matches2 = (pattern, text) => {
     return false;
   }
 };
+var LONG = 280;
+function ownWords(prompt) {
+  return prompt.replace(/<([a-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<[a-z][\w-]*\b[^>]*\/>/gi, " ").trim();
+}
+function lastSentence(text) {
+  const parts = text.trimEnd().split(/(?<=[.!])\s+|\n+/);
+  return parts[parts.length - 1] ?? text;
+}
 function isQuestionOfFact(prompt, also = [], never = []) {
-  const text = prompt.trim();
+  const text = ownWords(prompt);
   if (text === "" || text.startsWith("/")) {
     return false;
   }
@@ -5407,11 +5415,14 @@ function isQuestionOfFact(prompt, also = [], never = []) {
   if (also.some((pattern) => matches2(pattern, text))) {
     return true;
   }
-  if (QUESTION_MARK.test(text)) {
-    return true;
-  }
   const opening = text.replace(GREETING, "").match(/^[A-Za-z']+/)?.[0]?.toLowerCase() ?? "";
   if (OPENERS.includes(opening)) {
+    return true;
+  }
+  if (text.length > LONG) {
+    return QUESTION_MARK.test(lastSentence(text));
+  }
+  if (QUESTION_MARK.test(text)) {
     return true;
   }
   const lower = text.toLowerCase().replace(/\s+/g, " ");
@@ -6243,8 +6254,9 @@ var SHAPES = [
 ];
 var ENTROPY_FLOOR = 3.5;
 function isNotSecretValue(value) {
-  return /:\/\//.test(value) || /^(?:\.{0,2}\/|~\/|[A-Za-z]:\\)/.test(value) || /^\^|\$$|\\[dDwWsSbB]|\[[^\]]*-[^\]]*\]|\(\?|\.\*|\.\+|\{\d+,\d*\}/.test(value) || /^[A-Z][A-Z0-9_]*$/.test(value) || /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value);
+  return /:\/\//.test(value) || /^(?:\.{0,2}\/|~\/|[A-Za-z]:\\)/.test(value) || /^\^|\$$|\\[dDwWsSbB]|\[[^\]]*-[^\]]*\]|\(\?|\.\*|\.\+|\{\d+,\d*\}/.test(value) || /^[A-Z][A-Z0-9_]*$/.test(value) || /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value) || /[()]/.test(value) || /;$/.test(value) || /^[a-z0-9._-]{1,16}(?:\/[a-z0-9._-]{1,16}){2,}$/.test(value);
 }
+var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|specs|fixtures?|testdata|mocks?)\/|(?:^|[._/-])(?:test|spec)[._]|_test\.|Tests?\.(?:kt|java|swift|cs)$/i;
 function credentialKinds(text) {
   const out = [];
   for (const { kind, pattern, exact, isGeneric } of SHAPES) {
@@ -6271,6 +6283,9 @@ function scanCredentials(lines, cap = 20) {
   const out = [];
   for (const one of lines) {
     for (const kind of credentialKinds(one.text)) {
+      if (kind === "API key or secret assignment" && TEST_PATH.test(one.file)) {
+        continue;
+      }
       out.push({ file: one.file, line: one.line, kind });
     }
     if (out.length >= cap) {
@@ -6468,7 +6483,7 @@ function readSnapshot(stdout) {
   const differs = head.filter((line) => /^differs:[tu] ./.test(line)).map((line) => ({ path: line.slice("differs:t ".length), isUntracked: line.startsWith("differs:u") }));
   const differCount = Math.max(Number(tagged("differcount")) || 0, differs.length);
   const common = { branch: tagged("branch") || null, head: tagged("head") || null, base: base === "" || base === "unknown" ? null : base, headTree: tagged("headtree") || null, hidden, differs, differCount };
-  return tree === "" ? { ...NO_SNAPSHOT, ...common } : { ...common, tree, committable: tagged("committable") || null, files: [...new Set(lines.filter((line) => line.startsWith("file:")).map((line) => line.slice("file:".length)))], size: { files, lines: changedLines }, ignored, capped: capped > 0 ? capped : null };
+  return tree === "" ? { ...NO_SNAPSHOT, ...common } : { ...common, tree, committable: tagged("committable") || null, files: [...new Set(lines.filter((line) => line.startsWith("file:") && !line.startsWith("file:.claude/worktrees/")).map((line) => line.slice("file:".length)))], size: { files, lines: changedLines }, ignored, capped: capped > 0 ? capped : null };
 }
 function checkArgv(command, scrub) {
   return scrub !== null && scrub.mode === "enforce" ? ["bash", "-c", SCRUBBED, "devloop", command, ...new Set([...CHECK_ENV_BASE, ...scrub.pass])] : ["bash", "-lc", command];

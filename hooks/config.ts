@@ -227,7 +227,7 @@ export const DEFAULTS: Config = {
   reviewers: [],
   models: { reviewer: null, specialist: null, eval: null, learner: null },
   cache: { missTokens: 20_000, ttlMinutes: 5 },
-  context: { budgetTokens: 600, warnRemaining: null, saveRemaining: null, debounceCalls: 25, idleWarnTokens: 50_000 },
+  context: { budgetTokens: 600, warnRemaining: null, saveRemaining: null, debounceCalls: 200, idleWarnTokens: 50_000 },
   instructionsIgnore: [],
   instructionMaxBytes: 32 * 1024,
   checkEnv: { pass: [], mode: 'observe' },

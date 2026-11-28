@@ -142,6 +142,34 @@ async function roundDelta($: Engine, at: Place, from: string | null, to: string 
   return ran === null || ran.code !== 0 || ran.out.trim() === '' ? null : ran.out
 }
 
+const UNTRACKED = `
+# devloop:untracked
+git -c core.quotePath=false ls-files -o --exclude-standard 2>/dev/null | head -2000
+`
+
+/** The changed files git does not track: told to the reviewer apart from the committed change. */
+async function untrackedOf($: Engine, at: Place, changed: readonly string[]): Promise<string[]> {
+  const ran = await git($, at, UNTRACKED, [], 30_000).catch(() => null)
+  if (ran === null || ran.code !== 0) {
+    return []
+  }
+  const listed = new Set(ran.out.split('\n').map(one => one.trim()).filter(one => one !== ''))
+
+  return changed.filter(one => listed.has(one))
+}
+
+/** Past this many files or changed lines since the last round, a later round reviews the whole change, not only the delta. */
+const WIDE_FILES = 8
+const WIDE_LINES = 600
+
+/** Whether a round's delta is too wide to review as a fix: many files, or many changed lines. */
+export function isWideDelta(delta: string): boolean {
+  const files = new Set([...delta.matchAll(/^diff --git a\/(.+?) b\//gm)].map(one => one[1])).size
+  const lines = delta.split('\n').filter(line => /^[+-](?![+-]{2} )/.test(line)).length
+
+  return files > WIDE_FILES || lines > WIDE_LINES
+}
+
 /**
  * Starts a review round in a fresh context: the general reviewer, and each
  * specialist whose `when` matches a changed file. Resolves to a line saying
@@ -178,11 +206,14 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   const isNewCycle = loop.review.round === 0 || loop.review.cycle.ended === 'pass'
   const round = (isNewCycle ? 0 : loop.review.round) + 1
   // Round 2 and later reads the fix: the diff since the tree the cycle's last settled round read (decision 8).
-  const delta = round > 1 ? await roundDelta($, at, loop.review.cycle.settledTree, snap.tree) : null
+  // A delta that moved much of the change is a new change in all but name: the round reads it whole (and still re-checks the open findings).
+  const since = round > 1 ? await roundDelta($, at, loop.review.cycle.settledTree, snap.tree) : null
+  const delta = since !== null && isWideDelta(since) ? null : since
   const checks = await reviewerChecks($, at, cfg, loop)
   // The reviewer reads a diff the harness wrote, untracked files included,
   // from the base it measured: it needs no git command of its own.
   const diff = await writeReviewDiff($, at, snap.base, round)
+  const untracked = await untrackedOf($, at, loop.changed)
   // Its instructions come from the base branch, so a change cannot rewrite its own review.
   const reviewMd = await baseFile($, at, snap.base, 'REVIEW.md')
   const nextId = nextIdOf(loop.findings)
@@ -197,7 +228,7 @@ export async function startReview($: Engine, at: Place, isAuto: boolean, isPerso
   const features = Object.entries(loop.features).map(([id, one]) => (one.passes && one.tree === loop.tree ? `✓ feature ${id} passes on this tree` : `✗ feature ${id} not passing on this tree`))
   const tests = [...testLines(loop, cfg, await $.clock.now()), ...features]
   const promptFor = (name: string, one: Reviewer | null): string => reviewPrompt({
-    brief: isFast && one === null ? `${briefOf(one)}\n\n${FAST_BRIEF}` : briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, checks, tests, round, maxRounds: cfg.maxReviewRounds,
+    brief: isFast && one === null ? `${briefOf(one)}\n\n${FAST_BRIEF}` : briefOf(one), reviewMd, spec: loop.spec, base: snap.base, diff, tier, changed: loop.changed, untracked, checks, tests, round, maxRounds: cfg.maxReviewRounds,
     open: loop.findings.filter(each => each.status === 'open' && each.route === 'fix' && recheckedBy(each) === name), nextId, delta,
   })
   const spawn = async (name: string, one: Reviewer | null): Promise<string | { deny: string }> => {

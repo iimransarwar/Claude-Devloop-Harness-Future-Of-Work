@@ -469,7 +469,8 @@ async function done($: Engine, at: Place, cfg: Config, e: CommandRunInput): Prom
   const facts = factsOf(at, policy)
   const tier = tierFor(loop, policy.cfg)
   const rows = gate(loop, policy.cfg, facts)
-  if (tier !== 'none' && !isShippable(loop, policy.cfg, facts)) {
+  const isOpenGate = tier !== 'none' && !isShippable(loop, policy.cfg, facts)
+  if (isOpenGate) {
     const open = rows.filter(check => !check.isMet).map(check => `${check.label} (${check.note})`).join('; ')
     const isYes = await confirm($, `The gate is not green: ${open}. Close the change anyway?`, 'Close anyway', 'Keep it open')
     if (!isYes) {
@@ -510,7 +511,8 @@ async function done($: Engine, at: Place, cfg: Config, e: CommandRunInput): Prom
       limit: before.limit,
       // The proposer's runs are counted per session (DESIGN 4.17), not per change.
       learner: before.learner,
-      base: snap.files.length === 0 || tier === 'none' ? before.base : snap.head,
+      // A change closed with the gate open keeps its base: the next review reads this work too, so closing never skips a review.
+      base: snap.files.length === 0 || tier === 'none' || isOpenGate ? before.base : snap.head,
     }, 'info', `change closed${before.spec !== null ? ` (${before.spec})` : ''}${closed.id === '' ? '' : ` as ${closed.id}`}`, now),
   )
   await afterClose($, at.root)
@@ -524,7 +526,9 @@ async function done($: Engine, at: Place, cfg: Config, e: CommandRunInput): Prom
     await maybePropose($, at, policy.cfg, 'done', true).catch(() => '')
   }
 
-  return { text: ['Change closed. The loop is back in small-fix mode; /devloop metrics has the numbers.', ...closed.lines, ...(noted === null ? [] : [noted]), ...(shelved === null ? [] : [shelved.text])].join('\n') }
+  const kept = isOpenGate ? ['The gate was not green, so this work stays in the next change: its review reads it, measured from the same base.'] : []
+
+  return { text: ['Change closed. The loop is back in small-fix mode; /devloop metrics has the numbers.', ...kept, ...closed.lines, ...(noted === null ? [] : [noted]), ...(shelved === null ? [] : [shelved.text])].join('\n') }
 }
 
 /**

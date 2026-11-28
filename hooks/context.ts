@@ -188,13 +188,14 @@ export const tailLines = (text: string, count = 6): string[] =>
 /**
  * The two levels, in tokens remaining. Set in policy they are taken as given;
  * by default they scale with the window: warn when 30% of it remains or
- * 300,000 tokens are in use, whichever comes first; save when 15% remains or
- * 400,000 are in use. The cap in use keeps a large window from waiting until
- * it is nearly full (on a million-token window, 15% is still 150,000 left).
+ * 600,000 tokens are in use, whichever comes first; save when 15% remains or
+ * 750,000 are in use. The cap in use keeps a large window from waiting until
+ * it is nearly full, without calling a window that is still more than half
+ * empty nearly full (a million-token window warns at 400,000 left, saves at 250,000).
  */
 export function pressureLevels(window: number, cfg: Pick<Config, 'context'>): { warn: number; save: number } {
-  const warn = cfg.context.warnRemaining ?? Math.max(Math.round(window * 0.3), window - 300_000)
-  const save = cfg.context.saveRemaining ?? Math.max(Math.round(window * 0.15), window - 400_000)
+  const warn = cfg.context.warnRemaining ?? Math.max(Math.round(window * 0.3), window - 600_000)
+  const save = cfg.context.saveRemaining ?? Math.max(Math.round(window * 0.15), window - 750_000)
 
   return { warn, save: Math.min(save, warn) }
 }

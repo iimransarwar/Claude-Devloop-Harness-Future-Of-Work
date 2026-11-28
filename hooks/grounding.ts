@@ -47,6 +47,28 @@ const matches = (pattern: string, text: string): boolean => {
   }
 }
 
+/** Past this many characters a prompt is judged by how it opens and ends, not by every mark in it. */
+const LONG = 280
+
+/**
+ * The person's own words: the prompt without the tagged blocks Claude Code
+ * wraps around what it relays (another session's message, a task
+ * notification, a system reminder, a command's output), which no person typed.
+ */
+export function ownWords(prompt: string): string {
+  return prompt
+    .replace(/<([a-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[a-z][\w-]*\b[^>]*\/>/gi, ' ')
+    .trim()
+}
+
+/** The last sentence of a text: what follows its last full stop, exclamation mark or line break before the end. */
+function lastSentence(text: string): string {
+  const parts = text.trimEnd().split(/(?<=[.!])\s+|\n+/)
+
+  return parts[parts.length - 1] ?? text
+}
+
 /**
  * Whether a person's prompt is a question of fact (decision 2): a question
  * mark ending a sentence, an opening interrogative or auxiliary word after
@@ -55,7 +77,7 @@ const matches = (pattern: string, text: string): boolean => {
  * prompts a person typed (not a harness or hook message).
  */
 export function isQuestionOfFact(prompt: string, also: readonly string[] = [], never: readonly string[] = []): boolean {
-  const text = prompt.trim()
+  const text = ownWords(prompt)
   if (text === '' || text.startsWith('/')) {
     return false
   }
@@ -65,11 +87,16 @@ export function isQuestionOfFact(prompt: string, also: readonly string[] = [], n
   if (also.some(pattern => matches(pattern, text))) {
     return true
   }
-  if (QUESTION_MARK.test(text)) {
-    return true
-  }
   const opening = text.replace(GREETING, '').match(/^[A-Za-z']+/)?.[0]?.toLowerCase() ?? ''
   if (OPENERS.includes(opening)) {
+    return true
+  }
+  // A long prompt is an instruction or a report unless it ends on a question:
+  // a question mark or a checking phrase somewhere inside it asks nothing of the answer.
+  if (text.length > LONG) {
+    return QUESTION_MARK.test(lastSentence(text))
+  }
+  if (QUESTION_MARK.test(text)) {
     return true
   }
   const lower = text.toLowerCase().replace(/\s+/g, ' ')

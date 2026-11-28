@@ -130,6 +130,10 @@ export function parseReview(text: string): Parsed {
     }
     // Evidence is the last field; the quote ends somewhere before the problem.
     const evidence = bare(rest[rest.length - 1] ?? '')
+    // A reviewer that marks the evidence itself as a person's call ("decision: …") routes it to the person.
+    if (route === 'fix' && /^decision\b\s*[:-]/i.test(evidence)) {
+      route = 'decision'
+    }
     const readings: Reading[] = []
     for (let cut = rest.length - 2; cut >= 1; cut -= 1) {
       readings.push({ quote: bare(rest.slice(0, cut).join('|')), problem: bare(rest.slice(cut, -1).join('|')), evidence })
@@ -511,10 +515,10 @@ export function afterFix(isLast: boolean, autoReview: boolean): string {
     return 'The review cap is spent, so no further round will run. Do not keep fixing: tell the person what is still open and stop; a person reads the change.'
   }
   if (!autoReview) {
-    return 'Fix these findings and nothing else, then stop. Verification runs when you stop; the next review round does not start by itself here ("autoReview" is off), so a person starts it with /devloop review.'
+    return 'Fix these findings and nothing else, then stop. A finding that asks for an edit the person or the repository instructions reserve for a person is not yours: leave it, and say so. Verification runs when you stop; the next review round does not start by itself here ("autoReview" is off), so a person starts it with /devloop review.'
   }
 
-  return 'Fix these findings and nothing else, then stop. When you stop, verification runs, and once it passes on the changed tree the next review round starts by itself.'
+  return 'Fix these findings and nothing else, then stop. A finding that asks for an edit the person or the repository instructions reserve for a person is not yours: leave it, and say so. When you stop, verification runs, and once it passes on the changed tree the next review round starts by itself.'
 }
 
 /** One finding as a line of the format. */
@@ -567,7 +571,12 @@ export type PromptFacts = {
    * change: round 1, or a later one whose delta git could not give.
    */
   delta?: string | null
+  /** Changed files git does not track yet: in the diff, but not committed (they may predate the change). */
+  untracked?: readonly string[]
 }
+
+/** devloop's own files: the harness's policy and records, judged by a person, never the change's code. */
+export const HARNESS_FILES = /^(?:devloop\.json|REVIEW\.md|AGENTS\.md|evals\/|\.claude\/|\.devloop\/)/
 
 /** The most of the diff since the last round a scoped prompt carries; past it, the files are named and the whole diff read. */
 export const DELTA_CHARS = 60_000
@@ -615,6 +624,7 @@ export function reviewPrompt(facts: PromptFacts): string {
       : 'The harness could not write the diff; read the changed files listed below directly.',
     `Risk tier: ${facts.tier}. At this tier these severities block: ${blocking}.`,
     `Changed files (${facts.changed.length}): ${facts.changed.slice(0, 60).join(', ')}${facts.changed.length > 60 ? ', …' : ''}`,
+    ...untrackedLines(facts.changed, facts.untracked ?? []),
     'You run nothing: the harness ran the checks, and their results are below. Judge from the diff, the code and these results.',
     ...(facts.tests === undefined ? [] : [facts.tests.length > 0 ? `Tests on this tree (from the harness):\n${facts.tests.map(one => `  ${one}`).join('\n')}` : 'Tests on this tree: none set.']),
     `This is round ${facts.round} of ${facts.maxRounds}.`,
@@ -625,6 +635,20 @@ export function reviewPrompt(facts: PromptFacts): string {
   ].join('\n\n')
 
   return [task, now, contract()].join('\n\n')
+}
+
+/**
+ * What the reviewer is told about the files that are not the change's code:
+ * devloop's own files, and untracked files, which may have sat in the
+ * repository before the work began. Neither fails a round on its own.
+ */
+function untrackedLines(changed: readonly string[], untracked: readonly string[]): string[] {
+  const own = changed.filter(one => HARNESS_FILES.test(one))
+  const loose = untracked.filter(one => !HARNESS_FILES.test(one))
+  return [
+    ...(own.length === 0 ? [] : [`devloop's own files (${own.slice(0, 20).join(', ')}${own.length > 20 ? ', …' : ''}) are the harness's policy and records, judged by a person: raise no finding on them.`]),
+    ...(loose.length === 0 ? [] : [`Untracked, not committed (${loose.length}): ${loose.slice(0, 30).join(', ')}${loose.length > 30 ? ', …' : ''}. They may predate this change. Raise a finding on one only when committed code uses it, and route a question of whether it belongs in the change to the person (decision), never to the builder.`]),
+  ]
 }
 
 /** The one second chance a reviewer gets when its answer could not be read: restate, not review again. */
