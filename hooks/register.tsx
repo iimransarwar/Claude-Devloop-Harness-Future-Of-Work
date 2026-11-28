@@ -53,7 +53,7 @@ import { librarySpellings, searchCommand } from './librarycmd'
 import { ACTIONS, commandName, failureText, registerActions } from './actions'
 import { applyChanges, effectLine, readSettings } from './settings'
 import { SET_UP_HEADLINE } from './setup'
-import { barParts } from './statusbar'
+import { activityText, barParts } from './statusbar'
 import {
   SETTINGS_FOOTER, SETTINGS_LABEL, SETTINGS_OPEN, SETTINGS_PANE, absentOf, changeTests, closeSettings, installGuard, isSettings, openedWithOf, pickSetting, pythonMissing, removeGuard, saveSettings, settingsCommand, unreadableOf,
 } from './settingspane'
@@ -69,9 +69,9 @@ import { missingDeps } from './spec'
 import { finishesTask, isTaskStatePath, sessionCheckProblems, tasksEditRefusalOf, writesTaskState } from './tasks'
 import type { TasksFacts } from './tasks'
 import {
-  abandonStale, addOpenQuestion, brief, bump, cacheOf, recordLesson, checkReviewDiff, currentBranch, envFor, factsOf, filesUnder, forget, git, heldMainRoot, heldPolicy, coverageNow, locate, look, loopOf, markError,
+  abandonStale, activityOf, addOpenQuestion, brief, bump, cacheOf, recordLesson, checkReviewDiff, currentBranch, envFor, factsOf, filesUnder, forget, git, heldMainRoot, heldPolicy, coverageNow, locate, look, loopOf, markError,
   metrics, modeInForce, modeOf, note, outputPath, policyInForce, questionsOf, readFeatures, record, refresh, remoteOf, restore, runFeatures, save, saveCache, sectionOf,
-  setSection, settingsDraftOf, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, updateSettingsDraft, verifyNow, withGlobs, withSnapshot, placesOf, judgeFeatureCheck,
+  setActivity, setSection, settingsDraftOf, snapshot, snapshotInForce, setTab, stateDirOf, stateRootOf, tabOf, tasksFactsOf, updateSettingsDraft, verifyNow, withGlobs, withSnapshot, placesOf, judgeFeatureCheck,
 } from './state'
 import type { Engine, Place } from './state'
 import { fixAdvice, RULES } from './templates'
@@ -668,6 +668,26 @@ function flightClash(kind: FlightKind): Refusal | null {
   return null
 }
 
+/** How often the activity row is sampled and its spinner turns. */
+const ACTIVITY_MS = 400
+/** The activity timer of this module's life: cancelled when a new session starts. */
+let activityTimer: { cancel: () => void } | undefined
+
+/**
+ * One tick of the activity row: the running agents' own task descriptions
+ * (the Agent call's few words), and the next spinner frame. Writes only
+ * while an agent runs, and once more to clear the row when the last ends.
+ */
+async function activityTick($: Engine): Promise<void> {
+  const agents = await $.agent.list().catch(() => [])
+  const tasks = agents.filter(one => one.status === 'running' || one.status === 'pending').map(one => one.description || one.type)
+  const before = await activityOf($)
+  if (tasks.length === 0 && before.tasks.length === 0) {
+    return
+  }
+  await setActivity($, { frame: tasks.length === 0 ? 0 : before.frame + 1, tasks })
+}
+
 /** Where agents' own git worktrees sit: each is a checkout of its own, never part of this tree's change. */
 const AGENT_CHECKOUT = /^\.claude\/worktrees\/[^/]+(?:\/|$)/
 
@@ -968,6 +988,9 @@ export const register: Register = on => {
     })
     live = fresh()
     forgetRenewal()
+    // The row's spinner and the words of what agents are doing: sampled while any agent runs, nothing written while none does.
+    activityTimer?.cancel()
+    activityTimer = $.clock.every(ACTIVITY_MS, () => activityTick($))
     // Every tool, before anything that could fail: the list must not depend on the repository.
     await registerTools($).catch(() => undefined)
     // The module is live in this session: a classic hook that finds no stamp for a call knows the module's hook was skipped (D1).
@@ -2371,19 +2394,25 @@ export const register: Register = on => {
     // The time, so a background run says how long it has gone; a clock that cannot be read names no time.
     const now = await $.clock.now().catch(() => undefined)
     const parts = policy === null ? null : barParts(loop, policy.cfg, gate(loop, policy.cfg, factsOf(at, policy)), now)
-    if (parts === null) {
+    const activity = await activityOf($).then(one => activityText(one.tasks, one.frame)).catch(() => null)
+    if (parts === null && activity === null) {
       return next(e)
     }
     const { Text } = $.ui.resolve(e)
+    const dot = <Text color="subtle"> · </Text>
+    const working = activity === null ? null : <Text><Text color="suggestion">{activity.icon} </Text><Text color="warning">{activity.text}</Text></Text>
+    if (parts === null) {
+      return <Text wrap="truncate-end"><Text bold color="suggestion">devloop</Text>{dot}{working}</Text>
+    }
     // One line of inline runs (never a flex row, which stretched and cut the parts), with a short text bar for the gate.
     const total = Math.max(1, parts.gate.total)
     const filled = Math.round((parts.gate.met / total) * 6)
     const bar = `${'▰'.repeat(filled)}${'▱'.repeat(6 - filled)}`
-    const dot = <Text color="subtle"> · </Text>
 
     return (
       <Text wrap="truncate-end">
         <Text bold color="suggestion">devloop</Text>
+        {working !== null && dot}{working}
         {dot}<Text>{parts.phase}</Text>
         {dot}<Text color="subtle">tests </Text><Text color={parts.tests.color}>{parts.tests.text}</Text>
         {parts.review !== null && dot}{parts.review !== null && <Text color="subtle">review </Text>}{parts.review !== null && <Text color={parts.review.color}>{parts.review.text}</Text>}

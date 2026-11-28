@@ -74,3 +74,32 @@ export function barParts(loop: Loop, cfg: Config, checks: readonly Check[], now?
           : { text: 'no changes', color: 'success' },
   }
 }
+
+/** The spinner's frames, one per tick. */
+const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+/** Ticks each agent's words stay before the next agent's. */
+const HOLD = 8
+/** The most words shown of one task. */
+const WORDS = 5
+
+/** A task's words for the row: "devloop " dropped, at most five words. */
+export function taskWords(description: string): string {
+  const words = description.replace(/^devloop\s+/i, '').replace(/[,:;]+/g, ' ').trim().split(/\s+/).filter(one => one !== '')
+
+  return words.length === 0 ? 'working' : words.slice(0, WORDS).join(' ')
+}
+
+/**
+ * What the row says agents are doing, or null when none is running: a
+ * spinner frame, and one running agent's words at a time, turning to the
+ * next every few ticks, with how many there are when more than one.
+ */
+export function activityText(tasks: readonly string[], frame: number): { icon: string; text: string } | null {
+  if (tasks.length === 0) {
+    return null
+  }
+  const at = Math.floor(frame / HOLD) % tasks.length
+  const words = taskWords(tasks[at] ?? '')
+
+  return { icon: SPIN[frame % SPIN.length] ?? '⠋', text: tasks.length === 1 ? words : `${tasks.length} agents · ${words}` }
+}
