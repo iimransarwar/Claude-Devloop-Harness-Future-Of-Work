@@ -402,9 +402,12 @@ export type SettingsRow = 'mode' | 'tests' | 'scope' | 'autoReview' | 'approvals
  */
 export type SettingsDraft = { changes: Partial<Record<SettingsRow, string>> & { verify?: readonly unknown[] }; openedWith: Record<SettingsRow, string> }
 
+/** What the row above the prompt says agents are doing: the running agents' own task descriptions, and the spinner's frame. */
+export type Activity = { frame: number; tasks: readonly string[] }
+
 declare module 'claude-code' {
   interface PluginState {
-    devloop: { loop: Shaped<Loop>; mode: Mode; tab: PaneTab; section: Shaped<SectionDecision>; settings: Shaped<SettingsDraft | null> }
+    devloop: { loop: Shaped<Loop>; mode: Mode; tab: PaneTab; section: Shaped<SectionDecision>; settings: Shaped<SettingsDraft | null>; activity: Activity }
   }
   // The plugin's own tools, so `e.tool === <name>` narrows to their input.
   interface McpToolInputs {

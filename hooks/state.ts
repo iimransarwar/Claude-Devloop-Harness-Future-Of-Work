@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { CheckRecord, FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
+import type { Activity, CheckRecord, FeatureStatus, Loop, LoopEvent, Mode, PaneTab, Question, SectionDecision, SettingsDraft } from '../types'
 import { EMPTY_CACHE } from './cache'
 import type { CacheState } from './cache'
 import { parseConfig } from './config'
@@ -51,6 +51,18 @@ const LOOP = atom({ plugin: 'devloop', key: 'loop' } as const, FRESH, { shape: S
 const MODE = atom({ plugin: 'devloop', key: 'mode' } as const, 'off' as Mode)
 /** The pane's tab: written from a tab button's handler, never while drawing. */
 const TAB = atom({ plugin: 'devloop', key: 'tab' } as const, 'gate' as PaneTab)
+/** What agents are doing, for the row above the prompt: written by the activity timer, read while drawing. */
+const ACTIVITY = atom({ plugin: 'devloop', key: 'activity' } as const, { frame: 0, tasks: [] } as Activity)
+
+/** The agents' activity as last sampled. */
+export async function activityOf($: Engine): Promise<Activity> {
+  return read($, ACTIVITY)
+}
+
+/** Writes the agents' activity; a write redraws the row. */
+export async function setActivity($: Engine, next: Activity): Promise<void> {
+  await update($, ACTIVITY, () => next)
+}
 
 /**
  * Whether the rules section is sent, decided at a thread's first composition
