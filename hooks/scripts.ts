@@ -322,7 +322,7 @@ export function readSnapshot(stdout: string): Snapshot {
 
   return tree === ''
     ? { ...NO_SNAPSHOT, ...common }
-    : { ...common, tree, committable: tagged('committable') || null, files: [...new Set(lines.filter(line => line.startsWith('file:')).map(line => line.slice('file:'.length)))], size: { files, lines: changedLines }, ignored, capped: capped > 0 ? capped : null }
+    : { ...common, tree, committable: tagged('committable') || null, files: [...new Set(lines.filter(line => line.startsWith('file:') && !line.startsWith('file:.claude/worktrees/')).map(line => line.slice('file:'.length)))], size: { files, lines: changedLines }, ignored, capped: capped > 0 ? capped : null }
 }
 
 /** The argv a check runs with: a login shell with everything (`off`, `observe`), or only the base and the names passed (`enforce`). */

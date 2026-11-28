@@ -60,7 +60,8 @@ export function barParts(loop: Loop, cfg: Config, checks: readonly Check[], now?
       : isStale ? { text: 'out of date', color: 'warning' }
         : loop.review.status === 'pass' ? { text: '✓ passed', color: 'success' }
           : loop.review.status === 'running' ? { text: '… running', color: 'warning' }
-            : { text: 'not run', color: 'subtle' }
+            : loop.review.cycle.ended === 'cap' ? { text: `rounds spent (${loop.review.round})`, color: 'warning' }
+              : { text: 'not run', color: 'subtle' }
 
   return {
     phase,

@@ -668,6 +668,14 @@ function flightClash(kind: FlightKind): Refusal | null {
   return null
 }
 
+/** Where agents' own git worktrees sit: each is a checkout of its own, never part of this tree's change. */
+const AGENT_CHECKOUT = /^\.claude\/worktrees\/[^/]+(?:\/|$)/
+
+/** A placed path inside an agent's checkout, spelled from that checkout's root. */
+function inCheckout(one: Placed): Placed {
+  return one.rel !== null && AGENT_CHECKOUT.test(one.rel) ? { ...one, rel: one.rel.replace(AGENT_CHECKOUT, '') } : one
+}
+
 /**
  * Whether the context is past a pressure level now, debounced (hooks/context.ts):
  * the note for the builder, or null. At the save level the person hears it too.
@@ -1253,9 +1261,11 @@ export const register: Register = on => {
 
       if (isFile) {
         const file = e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'Read' ? e.file_path : e.tool === 'NotebookEdit' ? e.notebook_path : ''
-        const spelled = place(file, cwd, where)
+        // A path in an agent's own checkout (.claude/worktrees/<name>/) is judged as that checkout's path:
+        // its tests and protected files are guarded as the repository's are, and `.claude/` is not its folder.
+        const spelled = inCheckout(place(file, cwd, where))
         // A link is judged by where it leads as well as by how it is spelled.
-        const placed = [spelled, ...await realOf($, spelled, where)]
+        const placed = [spelled, ...(await realOf($, spelled, where)).map(inCheckout)]
         path = spelled.rel
         subject = spelled.rel ?? file
         if (placed.some(one => isSecretPlace(one, cfg))) {

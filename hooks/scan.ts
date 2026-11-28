@@ -114,8 +114,15 @@ function isNotSecretValue(value: string): boolean {
     /^(?:\.{0,2}\/|~\/|[A-Za-z]:\\)/.test(value) ||
     /^\^|\$$|\\[dDwWsSbB]|\[[^\]]*-[^\]]*\]|\(\?|\.\*|\.\+|\{\d+,\d*\}/.test(value) ||
     /^[A-Z][A-Z0-9_]*$/.test(value) ||
-    /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value)
+    /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value) ||
+    // Code, not a value: a call or an expression (`typedSecretBytes(_secretKey.text);`).
+    /[()]/.test(value) || /;$/.test(value) ||
+    // A label of short lower-case parts (`wv/backup/f/secretkey/v1`), as a key-derivation context or a store key is.
+    /^[a-z0-9._-]{1,16}(?:\/[a-z0-9._-]{1,16}){2,}$/.test(value)
 }
+
+/** A test or fixture file: a generic assignment there is test data, not a credential (a known token shape still counts). */
+const TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|specs|fixtures?|testdata|mocks?)\/|(?:^|[._/-])(?:test|spec)[._]|_test\.|Tests?\.(?:kt|java|swift|cs)$/i
 
 /** The kinds of credential one line holds; an obvious placeholder never counts. */
 export function credentialKinds(text: string): string[] {
@@ -147,6 +154,9 @@ export function scanCredentials(lines: readonly Added[], cap = 20): CredentialHi
   const out: CredentialHit[] = []
   for (const one of lines) {
     for (const kind of credentialKinds(one.text)) {
+      if (kind === 'API key or secret assignment' && TEST_PATH.test(one.file)) {
+        continue
+      }
       out.push({ file: one.file, line: one.line, kind })
     }
     if (out.length >= cap) {

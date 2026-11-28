@@ -275,8 +275,8 @@ describe('4. the cold-start briefing', () => {
 describe('5. context pressure and the handoff', () => {
   test('two levels in tokens remaining, scaled to the window with caps in use', async () => {
     expect(pressureLevels(200_000, DEFAULTS)).toEqual({ warn: 60_000, save: 30_000 })
-    // A million-token window does not wait until 150,000 remain: 300,000 and 400,000 in use.
-    expect(pressureLevels(1_000_000, DEFAULTS)).toEqual({ warn: 700_000, save: 600_000 })
+    // A million-token window does not wait until 150,000 remain, nor call itself full with most of it left: 600,000 and 750,000 in use.
+    expect(pressureLevels(1_000_000, DEFAULTS)).toEqual({ warn: 400_000, save: 250_000 })
     expect(pressureLevels(1_000_000, parseConfig(JSON.stringify({ context: { warnRemaining: 90_000, saveRemaining: 40_000 } })).cfg)).toEqual({ warn: 90_000, save: 40_000 })
     const levels = pressureLevels(200_000, DEFAULTS)
     expect(pressureOf(100_000, 200_000, levels)).toBe(0)

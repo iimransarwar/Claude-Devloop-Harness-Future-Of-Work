@@ -429,7 +429,9 @@ export function gate(loop: Loop, cfg: Config, facts: GateFacts = NO_FACTS): Chec
         ? 'not scanned on this tree yet: the scan runs with verification'
         : hits.length === 0
           ? 'no key or token shapes in the added lines'
-          : `${list(hits.map(one => `${one.file}:${one.line} (${one.kind})`))}: remove it and rotate it; the value is not shown`,
+          : hits.every(one => one.kind === 'API key or secret assignment')
+            ? `${list(hits.map(one => `${one.file}:${one.line} (${one.kind})`))}: a secret-named value that looks random; if it is a real credential, remove it and rotate it (the value is not shown)`
+            : `${list(hits.map(one => `${one.file}:${one.line} (${one.kind})`))}: remove it and rotate it; the value is not shown`,
     })
   }
   if (loop.changed.some(file => matchesAny(file, cfg.tests))) {

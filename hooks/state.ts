@@ -284,7 +284,9 @@ export function brief(loop: Loop): string {
       const isFailing = loop.review.status === 'pass' && (loop.checklistFails ?? []).some(one => one.tree !== null && one.tree === loop.review.tree)
       // A cycle that passed on another tree, its verdict reset by a verification of the moved tree: out of date (rule 15), as the gate's row says.
       const isStale = loop.review.status === 'none' && loop.review.cycle.ended === 'pass' && loop.review.tree !== null && loop.review.tree !== loop.tree
-      parts.push(`review ${isStale ? 'stale' : mark(isFailing ? 'fail' : loop.review.status)}`)
+      // Rounds ran but none passed and the cap is spent: say so, not "not run" (a person reads the change now).
+      const isSpent = loop.review.status === 'none' && loop.review.cycle.ended === 'cap'
+      parts.push(`review ${isStale ? 'stale' : isSpent ? `rounds spent (${loop.review.round})` : mark(isFailing ? 'fail' : loop.review.status)}`)
     }
   }
 
